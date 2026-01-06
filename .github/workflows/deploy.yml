@@ -1,0 +1,29 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: taysr-483501
+
+      - name: Deploy via gcloud compute ssh
+        run: |
+          gcloud compute ssh --zone "us-east1-c" "taysr" --project "taysr-483501" --command "set -euo pipefail; cd ~/taysr; git pull; npm install; npm run build; pm2 restart taysr"

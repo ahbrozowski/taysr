@@ -194,9 +194,33 @@ pm2 restart taysr
 
 ---
 
-## Part 7: Security Hardening (Recommended)
+## Part 7: Auto-Deploy on Push (GitHub Actions + gcloud)
 
-### Step 7.1: Create Non-Root User (Optional but Recommended)
+This will rebuild and restart the bot whenever you push to `main` (or `master`).
+
+### Step 7.1: Create a GCP Service Account Key
+Create a service account key JSON in the GCP console (IAM & Admin → Service Accounts → Keys).
+
+### Step 7.2: Add GitHub Secrets
+In your GitHub repo settings → **Secrets and variables** → **Actions**, add:
+
+- `GCP_SA_KEY` = contents of the service account JSON key
+
+### Step 7.3: Workflow
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy.yml` that runs:
+```bash
+cd ~/taysr
+git pull
+npm install
+npm run build
+pm2 restart taysr
+```
+
+---
+
+## Part 8: Security Hardening (Recommended)
+
+### Step 8.1: Create Non-Root User (Optional but Recommended)
 ```bash
 # Create user
 sudo adduser botuser
@@ -208,7 +232,7 @@ sudo usermod -aG sudo botuser
 su - botuser
 ```
 
-### Step 7.2: Set Up Firewall (UFW)
+### Step 8.2: Set Up Firewall (UFW)
 ```bash
 # Install UFW
 sudo apt install -y ufw

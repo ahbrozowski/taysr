@@ -33,12 +33,20 @@ client.on(Events.MessageCreate, async (message) => {
     await message.reply(`👋 Whats up ${message.author.username}!`);
   }
 
+  // Respond to !time
+  if (message.content === '!time') {
+    const now = Math.floor(Date.now() / 1000);
+    // Discord renders timestamps in the viewer's local timezone.
+    await message.reply(`⏰ Your local time: <t:${now}:F>`);
+  }
+
   // Respond to !help
   if (message.content === '!help') {
     await message.reply(
       '**Available Commands:**\n' +
       '• `!ping` - Responds with Pong!\n' +
       '• `!hello` - Greets you\n' +
+      '• `!time` - Shows the server time\n' +
       '• `!help` - Shows this message'
     );
   }
