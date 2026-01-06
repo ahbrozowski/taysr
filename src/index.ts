@@ -43,14 +43,14 @@ client.on(Events.MessageCreate, async (message) => {
   // Respond to !days
   if (message.content === '!days') {
     const now = new Date();
-    const year = now.getUTCFullYear();
-    let christmasMs = Date.UTC(year, 11, 25, 0, 0, 0);
-    if (now.getTime() > christmasMs) {
-      christmasMs = Date.UTC(year + 1, 11, 25, 0, 0, 0);
+    const year = now.getFullYear();
+    const christmas = new Date(year, 11, 25);
+    if (now > christmas) {
+      christmas.setFullYear(year + 1);
     }
-    const christmasTs = Math.floor(christmasMs / 1000);
-    // Discord renders relative timestamps in the viewer's local timezone.
-    await message.reply(`🎄 Christmas is <t:${christmasTs}:R> (<t:${christmasTs}:D>)`);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const diffDays = Math.ceil((christmas.getTime() - now.getTime()) / msPerDay);
+    await message.reply(`🎄 ${diffDays} day${diffDays === 1 ? '' : 's'} until Christmas!`);
   }
 
   // Respond to !help
