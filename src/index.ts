@@ -40,6 +40,19 @@ client.on(Events.MessageCreate, async (message) => {
     await message.reply(`⏰ Your local time: <t:${now}:F>`);
   }
 
+  // Respond to !days
+  if (message.content === '!days') {
+    const now = new Date();
+    const year = now.getFullYear();
+    const christmas = new Date(year, 11, 25);
+    if (now > christmas) {
+      christmas.setFullYear(year + 1);
+    }
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const diffDays = Math.ceil((christmas.getTime() - now.getTime()) / msPerDay);
+    await message.reply(`🎄 ${diffDays} day${diffDays === 1 ? '' : 's'} until Christmas!`);
+  }
+
   // Respond to !help
   if (message.content === '!help') {
     await message.reply(
@@ -47,6 +60,7 @@ client.on(Events.MessageCreate, async (message) => {
       '• `!ping` - Responds with Pong!\n' +
       '• `!hello` - Greets you\n' +
       '• `!time` - Shows the server time\n' +
+      '• `!days` - Shows days until Christmas\n' +
       '• `!help` - Shows this message'
     );
   }
