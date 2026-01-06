@@ -19,7 +19,7 @@ Complete step-by-step guide to deploy your Discord bot on Google Cloud Platform'
 3. Click **Create Instance**
 
 **Configure the instance:**
-- **Name:** `discord-bot` (or your choice)
+- **Name:** `taysr` (or your choice)
 - **Region:** `us-east1`, `us-central1`, or `us-west1` (required for free tier)
 - **Zone:** Any zone in the selected region (e.g., `us-east1-b`)
 - **Machine configuration:**
@@ -61,12 +61,12 @@ Since Discord bots only make **outbound** connections, you don't need to open an
 
 ### Option B: SSH via gcloud CLI (Recommended)
 ```bash
-gcloud compute ssh discord-bot --zone=us-east1-b
+gcloud compute ssh taysr --zone=us-east1-b
 ```
 
 ### Option C: SSH via IAP Tunnel (Most Secure)
 ```bash
-gcloud compute ssh discord-bot --zone=us-east1-b --tunnel-through-iap
+gcloud compute ssh taysr --zone=us-east1-b --tunnel-through-iap
 ```
 
 ---
@@ -140,7 +140,7 @@ npm run build
 
 ### Step 5.1: Start Bot with PM2
 ```bash
-pm2 start dist/index.js --name discord-bot
+pm2 start dist/index.js --name taysr
 ```
 
 ### Step 5.2: Save PM2 Process List
@@ -161,7 +161,7 @@ sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -
 ### Step 5.4: Verify PM2 is Running
 ```bash
 pm2 status
-pm2 logs discord-bot
+pm2 logs taysr
 ```
 
 ---
@@ -173,23 +173,23 @@ pm2 logs discord-bot
 pm2 status
 
 # View logs
-pm2 logs discord-bot
+pm2 logs taysr
 
 # View last 100 lines
-pm2 logs discord-bot --lines 100
+pm2 logs taysr --lines 100
 
 # Stop bot
-pm2 stop discord-bot
+pm2 stop taysr
 
 # Restart bot
-pm2 restart discord-bot
+pm2 restart taysr
 
 # Update bot after code changes
 cd ~/taysr
 git pull
 npm install
 npm run build
-pm2 restart discord-bot
+pm2 restart taysr
 ```
 
 ---
@@ -270,7 +270,7 @@ When you push changes to GitHub:
 
 ```bash
 # SSH into your VM
-gcloud compute ssh discord-bot --zone=us-east1-b
+gcloud compute ssh taysr --zone=us-east1-b
 
 # Navigate to project
 cd ~/taysr
@@ -285,10 +285,10 @@ npm install
 npm run build
 
 # Restart with PM2
-pm2 restart discord-bot
+pm2 restart taysr
 
 # Check logs
-pm2 logs discord-bot
+pm2 logs taysr
 ```
 
 ---
@@ -298,7 +298,7 @@ pm2 logs discord-bot
 ### Bot Not Starting
 ```bash
 # Check PM2 logs
-pm2 logs discord-bot --lines 50
+pm2 logs taysr --lines 50
 
 # Check if process is running
 pm2 status
@@ -346,7 +346,7 @@ pm2 startup
 pm2 save
 
 # Set restart policy
-pm2 start dist/index.js --name discord-bot --max-restarts 10
+pm2 start dist/index.js --name taysr --max-restarts 10
 pm2 save
 ```
 
@@ -371,27 +371,27 @@ pm2 save
 
 ## Alternative: Systemd Service (Instead of PM2)
 
-If you prefer systemd over PM2, see the included `discord-bot.service` file and follow these steps:
+If you prefer systemd over PM2, see the included `taysr.service` file and follow these steps:
 
 ```bash
 # Copy service file to systemd
-sudo cp discord-bot.service /etc/systemd/system/
+sudo cp taysr.service /etc/systemd/system/
 
 # Edit paths if needed
-sudo nano /etc/systemd/system/discord-bot.service
+sudo nano /etc/systemd/system/taysr.service
 
 # Reload systemd
 sudo systemctl daemon-reload
 
 # Enable and start service
-sudo systemctl enable discord-bot
-sudo systemctl start discord-bot
+sudo systemctl enable taysr
+sudo systemctl start taysr
 
 # Check status
-sudo systemctl status discord-bot
+sudo systemctl status taysr
 
 # View logs
-sudo journalctl -u discord-bot -f
+sudo journalctl -u taysr -f
 ```
 
 ---

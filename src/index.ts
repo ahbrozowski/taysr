@@ -30,7 +30,7 @@ client.on(Events.MessageCreate, async (message) => {
 
   // Respond to !hello
   if (message.content === '!hello') {
-    await message.reply(`👋 Hello ${message.author.username}!`);
+    await message.reply(`👋 Whats up ${message.author.username}!`);
   }
 
   // Respond to !help
