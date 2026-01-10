@@ -26,4 +26,4 @@ jobs:
 
       - name: Deploy via gcloud compute ssh
         run: |
-          gcloud compute ssh --zone "us-east1-c" "taysr" --project "taysr-483501" --command "set -euo pipefail; cd ~/taysr; git pull; npm install; npm run build; pm2 restart taysr"
+          gcloud compute ssh --zone "us-central1-a" "taysr-1" --project "taysr-483501" --command "set -euo pipefail; sudo -u runner bash -lc 'set -euo pipefail; if [ ! -d ~/taysr ]; then git clone https://github.com/ahbrozowski/taysr.git ~/taysr; fi; cd ~/taysr; git pull; npm install; npm run build; if pm2 describe taysr >/dev/null 2>&1; then pm2 restart taysr; else pm2 start dist/index.js --name taysr; fi; pm2 save'"

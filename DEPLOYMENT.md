@@ -19,9 +19,9 @@ Complete step-by-step guide to deploy your Discord bot on Google Cloud Platform'
 3. Click **Create Instance**
 
 **Configure the instance:**
-- **Name:** `taysr` (or your choice)
-- **Region:** `us-east1`, `us-central1`, or `us-west1` (required for free tier)
-- **Zone:** Any zone in the selected region (e.g., `us-east1-b`)
+- **Name:** `taysr-1` (or your choice)
+- **Region:** `us-central1` (required for free tier)
+- **Zone:** Any zone in the selected region (e.g., `us-central1-a`)
 - **Machine configuration:**
   - Series: **E2**
   - Machine type: **e2-micro** (0.25-2 vCPU, 1 GB memory)
@@ -61,12 +61,12 @@ Since Discord bots only make **outbound** connections, you don't need to open an
 
 ### Option B: SSH via gcloud CLI (Recommended)
 ```bash
-gcloud compute ssh taysr --zone=us-east1-b
+gcloud compute ssh taysr-1 --zone=us-central1-a
 ```
 
 ### Option C: SSH via IAP Tunnel (Most Secure)
 ```bash
-gcloud compute ssh taysr --zone=us-east1-b --tunnel-through-iap
+gcloud compute ssh taysr-1 --zone=us-central1-a --tunnel-through-iap
 ```
 
 ---
@@ -294,7 +294,7 @@ When you push changes to GitHub:
 
 ```bash
 # SSH into your VM
-gcloud compute ssh taysr --zone=us-east1-b
+gcloud compute ssh taysr-1 --zone=us-central1-a
 
 # Navigate to project
 cd ~/taysr
