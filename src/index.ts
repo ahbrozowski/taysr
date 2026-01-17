@@ -243,7 +243,8 @@ async function startBot() {
   const token = process.env.DISCORD_TOKEN;
   const applicationId = process.env.DISCORD_APPLICATION_ID;
   const devGuildId = process.env.DISCORD_DEV_GUILD_ID;
-  const isProduction = process.env.NODE_ENV === 'production';
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const isProduction = nodeEnv === 'production';
 
   if (!token) {
     throw new Error('DISCORD_TOKEN not found in environment variables');
@@ -252,17 +253,24 @@ async function startBot() {
     throw new Error('DISCORD_APPLICATION_ID not found in environment variables');
   }
 
+  console.log(`INFO: NODE_ENV=${nodeEnv}`);
+
   let route: RouteLike;
   let scopeLabel: string;
   if (isProduction) {
     route = Routes.applicationCommands(applicationId);
     scopeLabel = 'global';
   } else {
-    if (!devGuildId) {
-      throw new Error('DISCORD_DEV_GUILD_ID not found in environment variables');
+    if (devGuildId) {
+      route = Routes.applicationGuildCommands(applicationId, devGuildId);
+      scopeLabel = `guild ${devGuildId}`;
+    } else {
+      route = Routes.applicationCommands(applicationId);
+      scopeLabel = 'global';
+      console.warn(
+        '⚠️ DISCORD_DEV_GUILD_ID not set; registering slash commands globally.'
+      );
     }
-    route = Routes.applicationGuildCommands(applicationId, devGuildId);
-    scopeLabel = `guild ${devGuildId}`;
   }
 
   activeCommandName = resolveCommandName(isProduction);

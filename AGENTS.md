@@ -10,7 +10,7 @@
 - Install: `npm install`.
 - Env: copy `.env.example` to `.env`.
   - Required: `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`
-  - Dev-only: `DISCORD_DEV_GUILD_ID` (fast slash command registration)
+  - Dev-only: `DISCORD_DEV_GUILD_ID` (optional; enables fast guild-scoped registration)
   - Dev-only: `DEV_COMMAND_PREFIX` (override slash command name, default `taysr`)
   - Optional (needed for `!task`): `MONGODB_URI`, `MONGODB_DB`
 
@@ -42,7 +42,7 @@
 - All bot logic lives in `src/index.ts`.
 - To align with `SPEC.md`, replace message-content commands with slash commands + interaction handlers.
   - When moving to slash commands, you can drop `GatewayIntentBits.MessageContent` if not needed.
-- Slash commands register to a dev guild when `NODE_ENV` is not `production`; production registers globally.
+- Slash commands register to a dev guild when `NODE_ENV` is not `production` and `DISCORD_DEV_GUILD_ID` is set; otherwise they register globally.
   - `DEV_COMMAND_PREFIX` only applies in dev; production always uses `/taysr`.
 - If you keep MongoDB, define a clear schema for `tasks` and add server scoping.
 - Consider splitting into modules (`commands/`, `db/`, `scheduler/`) as the feature set grows.
