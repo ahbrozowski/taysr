@@ -284,7 +284,7 @@ Notes: Confirm with coaches before posting
 ## Data model
 
 ### ServerConfig
-- server_id (string, PK)
+- guild_id (string, PK, Discord guild ID)
 - task_list_channel_id (string, nullable until set)
 - task_list_message_id (string, nullable until set)
 - timezone (string, IANA tz)
@@ -293,7 +293,7 @@ Notes: Confirm with coaches before posting
 
 ### Goal
 - goal_id (string, unique short ID)
-- server_id (string, FK to ServerConfig)
+- guild_id (string, FK to ServerConfig)
 - name (string, unique per server, case-insensitive)
 - description (string, optional)
 - status (enum: active, archived)
@@ -302,7 +302,7 @@ Notes: Confirm with coaches before posting
 
 ### Task
 - task_id (string, unique short ID)
-- server_id (string, FK to ServerConfig)
+- guild_id (string, FK to ServerConfig)
 - goal_id (string, nullable, FK to Goal)
 - title (string)
 - notes (string, optional)

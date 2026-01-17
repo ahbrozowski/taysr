@@ -8,6 +8,7 @@ A basic Discord bot written in TypeScript with discord.js.
   - `!ping` - Responds with Pong!
   - `!hello` - Greets the user
   - `!help` - Shows available commands
+- Registers a `/taysr` slash command (WIP)
 
 ## Setup
 
@@ -37,11 +38,25 @@ npm install
    ```
    DISCORD_TOKEN=your_actual_token_here
    ```
+3. Add your application and dev guild IDs:
+   ```
+   DISCORD_APPLICATION_ID=your_app_id_here
+   DISCORD_DEV_GUILD_ID=your_dev_server_id_here
+   ```
+   - `DISCORD_APPLICATION_ID` is on the Discord Developer Portal app page.
+   - `DISCORD_DEV_GUILD_ID` is only required for development. Enable Developer Mode in Discord, then right-click your server and copy ID.
+4. Optional (dev only): override the slash command name:
+   ```
+   COMMAND_PREFIX=maysr
+   ```
+   - Must be lowercase, 1-32 chars, and match `^[a-z0-9-]{1,32}$`.
+   - Production always uses `/taysr` regardless of this value.
 
 ### 4. Invite Bot to Server
 
 1. In the Discord Developer Portal, go to "OAuth2" → "URL Generator"
 2. Select scopes: `bot`
+   - For slash commands, also add `applications.commands`
 3. Select bot permissions:
    - Read Messages/View Channels
    - Send Messages
@@ -81,10 +96,13 @@ taysr/
 - `!ping` - Check if the bot is responsive
 - `!hello` - Get a greeting from the bot
 - `!help` - Display all available commands
+- `/taysr help` - Slash command (WIP)
 
 ## Extending the Bot
 
-To add new commands, edit [src/index.ts](src/index.ts) and add new conditions in the `MessageCreate` event handler:
+To add new commands, edit [src/index.ts](src/index.ts):
+- Message commands are handled in the `MessageCreate` event handler.
+- Slash command definitions live in `commandData`.
 
 ```typescript
 if (message.content === '!yourcommand') {
