@@ -126,6 +126,12 @@ Add your Discord token:
 ```
 DISCORD_TOKEN=your_actual_token_here
 ```
+Add your application ID (from the Discord Developer Portal):
+```
+DISCORD_APPLICATION_ID=your_app_id_here
+```
+`DISCORD_DEV_GUILD_ID` is only required for local development; production registers commands globally.
+`DEV_COMMAND_PREFIX` is dev-only and ignored in production.
 
 Save and exit: `Ctrl+X`, then `Y`, then `Enter`
 

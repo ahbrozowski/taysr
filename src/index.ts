@@ -1,13 +1,70 @@
-import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
 
+const DEFAULT_COMMAND_NAME = 'taysr';
+const COMMAND_NAME_PATTERN = /^[a-z0-9-]{1,32}$/;
+let activeCommandName = DEFAULT_COMMAND_NAME;
+const PLANNED_SUBCOMMANDS = new Set([
+  'create',
+  'assign',
+  'unassign',
+  'take',
+  'complete',
+  'edit',
+  'delete',
+  'list',
+  'set-channel',
+  'set-timezone',
+  'set-reminders',
+  'help',
+]);
+
 const mongoUri = process.env.MONGODB_URI;
 const mongoDbName = process.env.MONGODB_DB || 'taysr';
 let mongoClient: MongoClient | null = null;
+
+function resolveCommandName(isProduction: boolean) {
+  if (isProduction) {
+    return DEFAULT_COMMAND_NAME;
+  }
+
+  const configured = process.env.DEV_COMMAND_PREFIX ?? DEFAULT_COMMAND_NAME;
+  const commandName = configured.toLowerCase();
+  if (!COMMAND_NAME_PATTERN.test(commandName)) {
+    throw new Error(
+      `Invalid command name "${configured}". Discord slash command names must be ` +
+      'lowercase, 1-32 characters, and match /^[a-z0-9-]{1,32}$/.'
+    );
+  }
+
+  return commandName;
+}
+
+function buildCommandJson(commandName: string) {
+  const commandData = [
+    new SlashCommandBuilder()
+      .setName(commandName)
+      .setDescription('Task management for roller derby teams')
+      .addSubcommand((subcommand) =>
+        subcommand.setName('help').setDescription('Show help and usage')
+      ),
+  ];
+
+  return commandData.map((command) => command.toJSON());
+}
+
+function buildHelpLines(commandName: string) {
+  return [
+    '**Taysr (WIP)**',
+    'Slash commands are being built. Planned commands:',
+    `/${commandName} create, assign, unassign, take, complete, edit, delete, list,`,
+    `/${commandName} set-channel, set-timezone, set-reminders, help`,
+  ];
+}
 
 async function getMongoDb() {
   if (!mongoUri) {
@@ -32,6 +89,39 @@ const client = new Client({
 // When the bot is ready
 client.once(Events.ClientReady, (c) => {
   console.log(`✅ Bot is ready! Logged in as ${c.user.tag}`);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== activeCommandName) return;
+
+  const subcommand = interaction.options.getSubcommand(false);
+  if (!subcommand) {
+    const lines = ['No subcommand provided.', ...buildHelpLines(activeCommandName)];
+    await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+    return;
+  }
+  if (subcommand === 'help') {
+    await interaction.reply({
+      content: buildHelpLines(activeCommandName).join('\n'),
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (PLANNED_SUBCOMMANDS.has(subcommand)) {
+    await interaction.reply({
+      content: `/${activeCommandName} ${subcommand} is not implemented yet.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const lines = [
+    `Unknown subcommand: ${subcommand}.`,
+    ...buildHelpLines(activeCommandName),
+  ];
+  await interaction.reply({ content: lines.join('\n'), ephemeral: true });
 });
 
 // Listen for messages
@@ -132,11 +222,62 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Login to Discord
-const token = process.env.DISCORD_TOKEN;
-if (!token) {
-  console.error('❌ Error: DISCORD_TOKEN not found in environment variables');
-  process.exit(1);
+async function registerSlashCommands(options: {
+  token: string;
+  route: string;
+  scopeLabel: string;
+  commandName: string;
+  commandJson: ReturnType<typeof buildCommandJson>;
+}) {
+  const { token, route, scopeLabel, commandName, commandJson } = options;
+  const rest = new REST({ version: '10' }).setToken(token);
+
+  await rest.put(route, { body: commandJson });
+  console.log(
+    `✅ Registered ${commandJson.length} commands (${scopeLabel}) for /${commandName}.`
+  );
 }
 
-client.login(token);
+async function startBot() {
+  const token = process.env.DISCORD_TOKEN;
+  const applicationId = process.env.DISCORD_APPLICATION_ID;
+  const devGuildId = process.env.DISCORD_DEV_GUILD_ID;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!token) {
+    throw new Error('DISCORD_TOKEN not found in environment variables');
+  }
+  if (!applicationId) {
+    throw new Error('DISCORD_APPLICATION_ID not found in environment variables');
+  }
+
+  let route: string;
+  let scopeLabel: string;
+  if (isProduction) {
+    route = Routes.applicationCommands(applicationId);
+    scopeLabel = 'global';
+  } else {
+    if (!devGuildId) {
+      throw new Error('DISCORD_DEV_GUILD_ID not found in environment variables');
+    }
+    route = Routes.applicationGuildCommands(applicationId, devGuildId);
+    scopeLabel = `guild ${devGuildId}`;
+  }
+
+  activeCommandName = resolveCommandName(isProduction);
+  const commandJson = buildCommandJson(activeCommandName);
+
+  await registerSlashCommands({
+    token,
+    route,
+    scopeLabel,
+    commandName: activeCommandName,
+    commandJson,
+  });
+  await client.login(token);
+}
+
+startBot().catch((error) => {
+  console.error('❌ Failed to start bot:', error);
+  process.exit(1);
+});
