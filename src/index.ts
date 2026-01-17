@@ -8,6 +8,20 @@ dotenv.config();
 const DEFAULT_COMMAND_NAME = 'taysr';
 const COMMAND_NAME_PATTERN = /^[a-z0-9-]{1,32}$/;
 let activeCommandName = DEFAULT_COMMAND_NAME;
+const PLANNED_SUBCOMMANDS = new Set([
+  'create',
+  'assign',
+  'unassign',
+  'take',
+  'complete',
+  'edit',
+  'delete',
+  'list',
+  'set-channel',
+  'set-timezone',
+  'set-reminders',
+  'help',
+]);
 
 const mongoUri = process.env.MONGODB_URI;
 const mongoDbName = process.env.MONGODB_DB || 'taysr';
@@ -43,6 +57,15 @@ function buildCommandJson(commandName: string) {
   return commandData.map((command) => command.toJSON());
 }
 
+function buildHelpLines(commandName: string) {
+  return [
+    '**Taysr (WIP)**',
+    'Slash commands are being built. Planned commands:',
+    `/${commandName} create, assign, unassign, take, complete, edit, delete, list,`,
+    `/${commandName} set-channel, set-timezone, set-reminders, help`,
+  ];
+}
+
 async function getMongoDb() {
   if (!mongoUri) {
     throw new Error('MONGODB_URI not found in environment variables');
@@ -72,16 +95,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== activeCommandName) return;
 
-  const subcommand = interaction.options.getSubcommand();
-  if (subcommand === 'help') {
-    const lines = [
-      '**Taysr (WIP)**',
-      'Slash commands are being built. Planned commands:',
-      `/${activeCommandName} create, assign, unassign, take, complete, edit, delete, list,`,
-      `/${activeCommandName} set-channel, set-timezone, set-reminders, help`,
-    ];
+  const subcommand = interaction.options.getSubcommand(false);
+  if (!subcommand) {
+    const lines = ['No subcommand provided.', ...buildHelpLines(activeCommandName)];
     await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+    return;
   }
+  if (subcommand === 'help') {
+    await interaction.reply({
+      content: buildHelpLines(activeCommandName).join('\n'),
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (PLANNED_SUBCOMMANDS.has(subcommand)) {
+    await interaction.reply({
+      content: `/${activeCommandName} ${subcommand} is not implemented yet.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const lines = [
+    `Unknown subcommand: ${subcommand}.`,
+    ...buildHelpLines(activeCommandName),
+  ];
+  await interaction.reply({ content: lines.join('\n'), ephemeral: true });
 });
 
 // Listen for messages
@@ -184,18 +224,13 @@ client.on(Events.MessageCreate, async (message) => {
 
 async function registerSlashCommands(options: {
   token: string;
-  applicationId: string;
-  isProduction: boolean;
-  devGuildId?: string;
+  route: string;
+  scopeLabel: string;
   commandName: string;
   commandJson: ReturnType<typeof buildCommandJson>;
 }) {
-  const { token, applicationId, isProduction, devGuildId, commandName, commandJson } = options;
+  const { token, route, scopeLabel, commandName, commandJson } = options;
   const rest = new REST({ version: '10' }).setToken(token);
-  const route = isProduction
-    ? Routes.applicationCommands(applicationId)
-    : Routes.applicationGuildCommands(applicationId, devGuildId as string);
-  const scopeLabel = isProduction ? 'global' : `guild ${devGuildId}`;
 
   await rest.put(route, { body: commandJson });
   console.log(
@@ -215,8 +250,18 @@ async function startBot() {
   if (!applicationId) {
     throw new Error('DISCORD_APPLICATION_ID not found in environment variables');
   }
-  if (!isProduction && !devGuildId) {
-    throw new Error('DISCORD_DEV_GUILD_ID not found in environment variables');
+
+  let route: string;
+  let scopeLabel: string;
+  if (isProduction) {
+    route = Routes.applicationCommands(applicationId);
+    scopeLabel = 'global';
+  } else {
+    if (!devGuildId) {
+      throw new Error('DISCORD_DEV_GUILD_ID not found in environment variables');
+    }
+    route = Routes.applicationGuildCommands(applicationId, devGuildId);
+    scopeLabel = `guild ${devGuildId}`;
   }
 
   activeCommandName = resolveCommandName(isProduction);
@@ -224,9 +269,8 @@ async function startBot() {
 
   await registerSlashCommands({
     token,
-    applicationId,
-    isProduction,
-    devGuildId,
+    route,
+    scopeLabel,
     commandName: activeCommandName,
     commandJson,
   });
