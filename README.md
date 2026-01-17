@@ -47,7 +47,7 @@ npm install
    - `DISCORD_DEV_GUILD_ID` is only required for development. Enable Developer Mode in Discord, then right-click your server and copy ID.
 4. Optional (dev only): override the slash command name:
    ```
-   COMMAND_PREFIX=maysr
+   DEV_COMMAND_PREFIX=maysr
    ```
    - Must be lowercase, 1-32 chars, and match `^[a-z0-9-]{1,32}$`.
    - Production always uses `/taysr` regardless of this value.

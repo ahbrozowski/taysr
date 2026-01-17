@@ -11,7 +11,7 @@
 - Env: copy `.env.example` to `.env`.
   - Required: `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`
   - Dev-only: `DISCORD_DEV_GUILD_ID` (fast slash command registration)
-  - Dev-only: `COMMAND_PREFIX` (override slash command name, default `taysr`)
+  - Dev-only: `DEV_COMMAND_PREFIX` (override slash command name, default `taysr`)
   - Optional (needed for `!task`): `MONGODB_URI`, `MONGODB_DB`
 
 ## Run / build
@@ -43,13 +43,13 @@
 - To align with `SPEC.md`, replace message-content commands with slash commands + interaction handlers.
   - When moving to slash commands, you can drop `GatewayIntentBits.MessageContent` if not needed.
 - Slash commands register to a dev guild when `NODE_ENV` is not `production`; production registers globally.
-  - `COMMAND_PREFIX` only applies in dev; production always uses `/taysr`.
+  - `DEV_COMMAND_PREFIX` only applies in dev; production always uses `/taysr`.
 - If you keep MongoDB, define a clear schema for `tasks` and add server scoping.
 - Consider splitting into modules (`commands/`, `db/`, `scheduler/`) as the feature set grows.
 
 ## Troubleshooting
 - Bot fails to start: check `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, and Discord portal intents.
 - Slash commands not appearing in dev: confirm `DISCORD_DEV_GUILD_ID` and that the bot is in that server.
-- Slash command name invalid: `COMMAND_PREFIX` must be lowercase, 1-32 chars, and match `^[a-z0-9-]{1,32}$`.
+- Slash command name invalid: `DEV_COMMAND_PREFIX` must be lowercase, 1-32 chars, and match `^[a-z0-9-]{1,32}$`.
 - `!task` fails: verify `MONGODB_URI` connectivity and `tasks` collection data.
 - No output: check PM2 or systemd logs.

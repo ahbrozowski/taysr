@@ -18,8 +18,7 @@ function resolveCommandName(isProduction: boolean) {
     return DEFAULT_COMMAND_NAME;
   }
 
-  const configured =
-    process.env.COMMAND_PREFIX ?? process.env.CMD_PREFIX ?? DEFAULT_COMMAND_NAME;
+  const configured = process.env.DEV_COMMAND_PREFIX ?? DEFAULT_COMMAND_NAME;
   const commandName = configured.toLowerCase();
   if (!COMMAND_NAME_PATTERN.test(commandName)) {
     throw new Error(
