@@ -44,7 +44,7 @@ npm install
    DISCORD_DEV_GUILD_ID=your_dev_server_id_here
    ```
    - `DISCORD_APPLICATION_ID` is on the Discord Developer Portal app page.
-   - `DISCORD_DEV_GUILD_ID` is only required for development. Enable Developer Mode in Discord, then right-click your server and copy ID.
+   - `DISCORD_DEV_GUILD_ID` is optional for development. If set, commands register to that guild immediately; if not, they register globally (slower to appear).
 4. Optional (dev only): override the slash command name:
    ```
    DEV_COMMAND_PREFIX=maysr
