@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import type { RouteLike } from '@discordjs/rest';
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 
@@ -224,7 +225,7 @@ client.on(Events.MessageCreate, async (message) => {
 
 async function registerSlashCommands(options: {
   token: string;
-  route: string;
+  route: RouteLike;
   scopeLabel: string;
   commandName: string;
   commandJson: ReturnType<typeof buildCommandJson>;
@@ -251,7 +252,7 @@ async function startBot() {
     throw new Error('DISCORD_APPLICATION_ID not found in environment variables');
   }
 
-  let route: string;
+  let route: RouteLike;
   let scopeLabel: string;
   if (isProduction) {
     route = Routes.applicationCommands(applicationId);
