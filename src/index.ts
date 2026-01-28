@@ -1,34 +1,18 @@
-import { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, Events, REST, Routes } from 'discord.js';
 import type { RouteLike } from '@discordjs/rest';
-import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
+import { connectToDatabase, disconnectFromDatabase, Task } from './models';
+import { initializeCommands, getCommandsForRegistration, executeCommand } from './commands';
+import { setClient } from './utils/client';
 
 // Load environment variables
 dotenv.config();
 
 const DEFAULT_COMMAND_NAME = 'taysr';
 const COMMAND_NAME_PATTERN = /^[a-z0-9-]{1,32}$/;
-let activeCommandName = DEFAULT_COMMAND_NAME;
-const PLANNED_SUBCOMMANDS = new Set([
-  'create',
-  'assign',
-  'unassign',
-  'take',
-  'complete',
-  'edit',
-  'delete',
-  'list',
-  'set-channel',
-  'set-timezone',
-  'set-reminders',
-  'help',
-]);
-
 const mongoUri = process.env.MONGODB_URI;
-const mongoDbName = process.env.MONGODB_DB || 'taysr';
-let mongoClient: MongoClient | null = null;
 
-function resolveCommandName(isProduction: boolean) {
+function resolveCommandName(isProduction: boolean): string {
   if (isProduction) {
     return DEFAULT_COMMAND_NAME;
   }
@@ -45,38 +29,12 @@ function resolveCommandName(isProduction: boolean) {
   return commandName;
 }
 
-function buildCommandJson(commandName: string) {
-  const commandData = [
-    new SlashCommandBuilder()
-      .setName(commandName)
-      .setDescription('Task management for roller derby teams')
-      .addSubcommand((subcommand) =>
-        subcommand.setName('help').setDescription('Show help and usage')
-      ),
-  ];
-
-  return commandData.map((command) => command.toJSON());
+function buildCommandsJson() {
+  const commands = getCommandsForRegistration();
+  return commands.map(cmd => cmd.build().toJSON());
 }
 
-function buildHelpLines(commandName: string) {
-  return [
-    '**Taysr (WIP)**',
-    'Slash commands are being built. Planned commands:',
-    `/${commandName} create, assign, unassign, take, complete, edit, delete, list,`,
-    `/${commandName} set-channel, set-timezone, set-reminders, help`,
-  ];
-}
 
-async function getMongoDb() {
-  if (!mongoUri) {
-    throw new Error('MONGODB_URI not found in environment variables');
-  }
-  if (!mongoClient) {
-    mongoClient = new MongoClient(mongoUri);
-    await mongoClient.connect();
-  }
-  return mongoClient.db(mongoDbName);
-}
 
 // Create a new Discord client
 const client = new Client({
@@ -89,40 +47,14 @@ const client = new Client({
 
 // When the bot is ready
 client.once(Events.ClientReady, (c) => {
+  setClient(client);
   console.log(`✅ Bot is ready! Logged in as ${c.user.tag}`);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== activeCommandName) return;
 
-  const subcommand = interaction.options.getSubcommand(false);
-  if (!subcommand) {
-    const lines = ['No subcommand provided.', ...buildHelpLines(activeCommandName)];
-    await interaction.reply({ content: lines.join('\n'), ephemeral: true });
-    return;
-  }
-  if (subcommand === 'help') {
-    await interaction.reply({
-      content: buildHelpLines(activeCommandName).join('\n'),
-      ephemeral: true,
-    });
-    return;
-  }
-
-  if (PLANNED_SUBCOMMANDS.has(subcommand)) {
-    await interaction.reply({
-      content: `/${activeCommandName} ${subcommand} is not implemented yet.`,
-      ephemeral: true,
-    });
-    return;
-  }
-
-  const lines = [
-    `Unknown subcommand: ${subcommand}.`,
-    ...buildHelpLines(activeCommandName),
-  ];
-  await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+  await executeCommand(interaction.commandName, interaction);
 });
 
 // Listen for messages
@@ -176,8 +108,7 @@ client.on(Events.MessageCreate, async (message) => {
   // Respond to !task
   if (message.content === '!task') {
     try {
-      const db = await getMongoDb();
-      const tasks = await db.collection('tasks').find({}).toArray();
+      const tasks = await Task.find({}).lean();
 
       if (tasks.length === 0) {
         await message.reply('No tasks found.');
@@ -185,10 +116,10 @@ client.on(Events.MessageCreate, async (message) => {
       }
 
       const lines = tasks.map((task) => {
-        const taskId = task.task_id ?? String(task._id);
+        const taskId = task.taskId;
         const title = task.title ?? 'Untitled';
         const status = task.status ?? 'unknown';
-        const due = task.due_at ? new Date(task.due_at).toISOString() : 'no due date';
+        const due = task.dueAt ? new Date(task.dueAt).toISOString() : 'no due date';
         return `• ${taskId} | ${title} | ${status} | ${due}`;
       });
 
@@ -227,15 +158,14 @@ async function registerSlashCommands(options: {
   token: string;
   route: RouteLike;
   scopeLabel: string;
-  commandName: string;
-  commandJson: ReturnType<typeof buildCommandJson>;
+  commandsJson: ReturnType<typeof buildCommandsJson>;
 }) {
-  const { token, route, scopeLabel, commandName, commandJson } = options;
+  const { token, route, scopeLabel, commandsJson } = options;
   const rest = new REST({ version: '10' }).setToken(token);
 
-  await rest.put(route, { body: commandJson });
+  await rest.put(route, { body: commandsJson });
   console.log(
-    `✅ Registered ${commandJson.length} commands (${scopeLabel}) for /${commandName}.`
+    `✅ Registered ${commandsJson.length} slash commands (${scopeLabel}).`
   );
 }
 
@@ -252,8 +182,14 @@ async function startBot() {
   if (!applicationId) {
     throw new Error('DISCORD_APPLICATION_ID not found in environment variables');
   }
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI not found in environment variables');
+  }
 
   console.log(`INFO: NODE_ENV=${nodeEnv}`);
+
+  // Connect to MongoDB
+  await connectToDatabase(mongoUri);
 
   let route: RouteLike;
   let scopeLabel: string;
@@ -273,18 +209,46 @@ async function startBot() {
     }
   }
 
-  activeCommandName = resolveCommandName(isProduction);
-  const commandJson = buildCommandJson(activeCommandName);
+  // Resolve the branded command name based on environment
+  const taysrCommandName = resolveCommandName(isProduction);
+
+  // Initialize all commands with the resolved name
+  initializeCommands(taysrCommandName);
+
+  const commandsJson = buildCommandsJson();
 
   await registerSlashCommands({
     token,
     route,
     scopeLabel,
-    commandName: activeCommandName,
-    commandJson,
+    commandsJson,
   });
   await client.login(token);
 }
+
+// Graceful shutdown handler
+async function shutdown(signal: string) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  try {
+    // Destroy Discord client
+    await client.destroy();
+    console.log('✅ Discord client destroyed');
+
+    // Disconnect from database
+    await disconnectFromDatabase();
+
+    console.log('✅ Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Handle shutdown signals
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 startBot().catch((error) => {
   console.error('❌ Failed to start bot:', error);
