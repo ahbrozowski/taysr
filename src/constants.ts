@@ -6,7 +6,6 @@ export const PLANNED_SUBCOMMANDS = new Set([
   'assign',
   'unassign',
   'take',
-  'complete',
   'edit',
   'delete',
   'list',

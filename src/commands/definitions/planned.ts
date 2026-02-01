@@ -26,17 +26,6 @@ export const plannedCommands: Command[] = [
   },
   {
     metadata: {
-      name: 'complete',
-      emoji: '✅',
-      description: 'Mark a task complete',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('complete').setDescription('Mark a task complete'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'assign',
       emoji: '👥',
       description: 'Assign a task to someone',
