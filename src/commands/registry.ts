@@ -19,6 +19,8 @@ export interface CommandMetadata {
   implemented: boolean;
   /** Whether this command requires a guild (server) context */
   requiresGuild: boolean;
+  /** Command category — 'settings' commands are hidden from the main picker */
+  category?: 'settings';
 }
 
 /**

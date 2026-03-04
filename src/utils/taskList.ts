@@ -72,8 +72,6 @@ async function buildTaskListComponents(tasks: any[], guildId: string): Promise<a
       for (const task of group.tasks) {
         lines.push(formatTaskLine(task));
       }
-
-      lines.push('');
     }
   }
 
@@ -102,7 +100,6 @@ function buildGoalTaskListComponents(tasks: any[], goalName: string): any[] {
     }
   }
 
-  lines.push('');
   lines.push(`_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`);
 
   return [new TextDisplayBuilder().setContent(lines.join('\n'))];
@@ -123,8 +120,8 @@ async function upsertPinnedMessage(
       const message = await channel.messages.fetch(existingMessageId);
       await message.edit({ components });
       return message.id;
-    } catch (error) {
-      console.log('Could not edit existing message, will create new one');
+    } catch {
+      // Could not edit existing message, will create new one
     }
   }
 
@@ -152,7 +149,6 @@ export async function updatePinnedTaskList(client: Client, guildId: string): Pro
     const config = await ServerConfig.findOne({ guildId });
 
     if (!config || !config.taskListChannelId) {
-      console.log(`No task list channel configured for guild ${guildId}`);
       return;
     }
 
@@ -173,8 +169,6 @@ export async function updatePinnedTaskList(client: Client, guildId: string): Pro
       config.taskListMessageId = messageId;
       await config.save();
     }
-
-    console.log(`✅ Updated task list for guild ${guildId}`);
   } catch (error) {
     console.error('Error updating pinned task list:', error);
     throw error;
@@ -208,7 +202,6 @@ export async function updateGoalPinnedList(client: Client, goalId: string): Prom
       await goal.save();
     }
 
-    console.log(`✅ Updated goal task list for ${goal.name} (${goalId})`);
   } catch (error) {
     console.error(`Error updating goal pinned list for ${goalId}:`, error);
     throw error;
@@ -224,7 +217,6 @@ export async function refreshPinnedTaskList(client: Client, guildId: string): Pr
     const config = await ServerConfig.findOne({ guildId });
 
     if (!config || !config.taskListChannelId) {
-      console.log(`No task list channel configured for guild ${guildId}`);
       return;
     }
 
@@ -240,7 +232,7 @@ export async function refreshPinnedTaskList(client: Client, guildId: string): Pr
         const oldMessage = await channel.messages.fetch(config.taskListMessageId);
         await oldMessage.delete();
       } catch (error) {
-        console.log('Could not delete old message:', error);
+        console.error('Could not delete old message:', error);
       }
     }
 
@@ -265,7 +257,6 @@ export async function refreshPinnedTaskList(client: Client, guildId: string): Pr
     config.taskListMessageId = message.id;
     await config.save();
 
-    console.log(`✅ Refreshed task list for guild ${guildId}`);
   } catch (error) {
     console.error('Error refreshing pinned task list:', error);
     throw error;

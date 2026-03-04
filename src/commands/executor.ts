@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { commandRegistry } from './registry';
 import { getConstructionMessage } from '../utils/messages';
+import { checkCommandPermission } from '../utils/permissions';
 
 /**
  * Validates that the interaction has a guild context when required
@@ -32,37 +33,36 @@ async function showGuildRequiredError(
 
   await interaction.reply({
     components,
-    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
   });
 }
 
 /**
- * Shows an error message for generic execution failures
+ * Shows an ephemeral error message, handling already-replied interactions
  */
-async function showExecutionError(
+async function showErrorMessage(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
-  commandName: string
+  content: string
 ): Promise<void> {
-  const components = [
-    new TextDisplayBuilder().setContent(
-      `❌ An error occurred while executing the command.\n\nTry using \`/${commandName}\` directly.`
-    )
-  ];
+  const components = [new TextDisplayBuilder().setContent(content)];
 
   try {
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({
         components,
-        flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+        flags: [MessageFlags.IsComponentsV2],
+        ephemeral: true,
       });
     } else {
       await interaction.reply({
         components,
-        flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+        flags: [MessageFlags.IsComponentsV2],
+        ephemeral: true,
       });
     }
   } catch (error) {
-    console.error('Failed to show execution error:', error);
+    console.error('Failed to show error message:', error);
   }
 }
 
@@ -76,7 +76,8 @@ async function showConstructionMessage(
   const message = getConstructionMessage(`/${commandName}`);
   await interaction.reply({
     components: [new TextDisplayBuilder().setContent(message)],
-    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
   });
 }
 
@@ -93,7 +94,7 @@ export async function executeCommand(
 
   if (!command) {
     console.error(`Command not found in registry: ${commandName}`);
-    await showExecutionError(interaction, commandName);
+    await showErrorMessage(interaction, `❌ An error occurred while executing the command.\n\nTry using \`/${commandName}\` directly.`);
     return;
   }
 
@@ -105,7 +106,7 @@ export async function executeCommand(
     } else {
       // For slash commands, this shouldn't happen as planned commands aren't registered
       console.error(`Unimplemented command invoked via slash: ${commandName}`);
-      await showExecutionError(interaction, commandName);
+      await showErrorMessage(interaction, `❌ An error occurred while executing the command.\n\nTry using \`/${commandName}\` directly.`);
     }
     return;
   }
@@ -116,11 +117,18 @@ export async function executeCommand(
     return;
   }
 
+  // Check permissions
+  const permCheck = await checkCommandPermission(interaction, command.metadata);
+  if (!permCheck.allowed) {
+    await showErrorMessage(interaction, `🔒 **Permission Denied**\n\n${permCheck.reason!}`);
+    return;
+  }
+
   // Execute the command
   try {
     await command.execute(interaction);
   } catch (error) {
     console.error(`Error executing command ${commandName}:`, error);
-    await showExecutionError(interaction, commandName);
+    await showErrorMessage(interaction, `❌ An error occurred while executing the command.\n\nTry using \`/${commandName}\` directly.`);
   }
 }

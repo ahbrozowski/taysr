@@ -4,6 +4,7 @@ export { ServerConfig, IServerConfig } from './ServerConfig';
 export { Goal, IGoal } from './Goal';
 export { Task, ITask } from './Task';
 export { Reminder, IReminder } from './Reminder';
+export { CommandPermission, ICommandPermission } from './CommandPermission';
 
 let listenersAdded = false;
 

@@ -4,17 +4,22 @@ import {
   ButtonStyle,
   ChatInputCommandInteraction,
   ButtonInteraction,
+  GuildMember,
   MessageFlags,
   TextDisplayBuilder,
   SectionBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
 } from 'discord.js';
-import { commandRegistry } from '../commands/registry';
+import { Command, commandRegistry } from '../commands/registry';
 import { executeCommand } from '../commands/executor';
+import { getAccessibleCommands } from './permissions';
 
 interface PickerState {
   page: number;
+  implemented: Command[];
+  planned: Command[];
+  all: Command[];
 }
 
 const COMMANDS_PER_PAGE = 8;
@@ -22,13 +27,20 @@ const SELECTION_TIMEOUT = 60000;
 
 function getDisplayCommands() {
   const implemented = commandRegistry.getImplemented()
-    .filter((c) => c.metadata.name !== 'help' && c.metadata.emoji !== '📋');
+    .filter((c) => c.metadata.name !== 'help' && c.metadata.name !== 'settings' && c.metadata.emoji !== '📋' && c.metadata.category !== 'settings');
   const planned = commandRegistry.getPlanned();
+
+  // Settings goes at the bottom of implemented commands
+  const settings = commandRegistry.get('settings');
+  if (settings?.metadata.implemented) {
+    implemented.push(settings);
+  }
+
   return { implemented, planned, all: [...implemented, ...planned] };
 }
 
 function render(state: PickerState) {
-  const { implemented, all } = getDisplayCommands();
+  const { implemented, all } = state;
   const totalPages = Math.ceil(all.length / COMMANDS_PER_PAGE);
   const start = state.page * COMMANDS_PER_PAGE;
   const pageCommands = all.slice(start, start + COMMANDS_PER_PAGE);
@@ -93,7 +105,28 @@ function render(state: PickerState) {
 export async function showCommandPicker(
   interaction: ChatInputCommandInteraction | ButtonInteraction
 ): Promise<void> {
-  const state: PickerState = { page: 0 };
+  // Pre-filter commands by user permissions (one DB query, reused across pages)
+  const { implemented, planned } = getDisplayCommands();
+  const allCommands = [...implemented, ...planned];
+
+  let filteredImplemented = implemented;
+  let filteredPlanned = planned;
+
+  if (interaction.guildId && interaction.member) {
+    const member = interaction.member as GuildMember;
+    const allNames = allCommands.map(c => c.metadata.name);
+    const accessible = await getAccessibleCommands(member, interaction.guildId, allNames);
+
+    filteredImplemented = implemented.filter(c => accessible.has(c.metadata.name));
+    filteredPlanned = planned.filter(c => accessible.has(c.metadata.name));
+  }
+
+  const state: PickerState = {
+    page: 0,
+    implemented: filteredImplemented,
+    planned: filteredPlanned,
+    all: [...filteredImplemented, ...filteredPlanned],
+  };
 
   let message;
   if (interaction instanceof ButtonInteraction) {
@@ -128,15 +161,16 @@ export async function showCommandPicker(
 
   collector.on('end', async (_collected: any, reason: string) => {
     if (reason === 'time') {
-      await showTimeoutView(interaction);
+      await showTimeoutView(interaction, state);
     }
   });
 }
 
 async function showTimeoutView(
-  interaction: ChatInputCommandInteraction | ButtonInteraction
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+  state: PickerState
 ): Promise<void> {
-  const { implemented, planned } = getDisplayCommands();
+  const { implemented, planned } = state;
 
   const components = [
     new TextDisplayBuilder().setContent('# 📋 Taysr Task Manager\n\n_Selection timed out._'),

@@ -6,9 +6,9 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   ChannelSelectMenuBuilder,
-  ChannelType,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   MessageFlags,
   TextDisplayBuilder,
   SectionBuilder,
@@ -21,6 +21,8 @@ import { Goal, ServerConfig } from '../../models';
 import { refreshPinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
 
+const COLLECTOR_TIMEOUT = 120000;
+
 export const setChannelCommand: Command = {
   metadata: {
     name: 'set-channel',
@@ -28,6 +30,7 @@ export const setChannelCommand: Command = {
     description: 'Set a channel for the task list or a goal',
     implemented: true,
     requiresGuild: true,
+    category: 'settings',
   },
 
   build: () => {
@@ -50,6 +53,7 @@ export const setChannelCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
+    // Button interaction → show scope chooser
     if (interaction instanceof ButtonInteraction) {
       await showScopeChooser(interaction);
       return;
@@ -58,7 +62,7 @@ export const setChannelCommand: Command = {
     const channelOption = interaction.options.getChannel('channel');
     const goalOption = interaction.options.getString('goal');
 
-    // No args → interactive UI
+    // No args → show scope chooser
     if (!channelOption && !goalOption) {
       await showScopeChooser(interaction);
       return;
@@ -67,26 +71,73 @@ export const setChannelCommand: Command = {
     const targetChannel = channelOption || interaction.channel;
     if (!targetChannel) {
       await interaction.reply({
-        components: [
-          new TextDisplayBuilder().setContent('❌ Could not determine the target channel.')
-        ],
+        components: [new TextDisplayBuilder().setContent('❌ Could not determine the target channel.')],
         flags: [MessageFlags.IsComponentsV2],
-        ephemeral: true,
+    ephemeral: true,
       });
       return;
     }
 
     if (goalOption) {
-      // Channel + goal → directly link goal to channel
       await directLinkGoal(interaction, targetChannel.id, goalOption);
     } else {
-      // Channel only → set server task list
       await handleServerScope(interaction);
     }
   },
 };
 
-// ── Direct Goal Link (slash command shortcut) ─────────────────────────
+// ── Scope Chooser ─────────────────────────────────────────────────────
+
+async function showScopeChooser(interaction: ChatInputCommandInteraction | ButtonInteraction) {
+  const components = [
+    new TextDisplayBuilder().setContent('# 📌 Channel Settings'),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    new TextDisplayBuilder().setContent('What would you like to configure?'),
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('Set the server-wide task list channel')
+      )
+      .setButtonAccessory(
+        new ButtonBuilder()
+          .setCustomId('setchan:server')
+          .setLabel('Server Task List')
+          .setStyle(ButtonStyle.Primary)
+      ),
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('Link or unlink a goal to a channel')
+      )
+      .setButtonAccessory(
+        new ButtonBuilder()
+          .setCustomId('setchan:goal')
+          .setLabel('Goal Channel')
+          .setStyle(ButtonStyle.Primary)
+      ),
+  ];
+
+  const message = await interaction.reply({
+    components,
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
+    fetchReply: true,
+  });
+
+  const collector = message.createMessageComponentCollector({
+    filter: (i: any) => i.user.id === interaction.user.id && i.customId.startsWith('setchan:'),
+    max: 1,
+    time: COLLECTOR_TIMEOUT,
+  });
+
+  collector.on('collect', async (i: any) => {
+    if (i.customId === 'setchan:server') {
+      await handleServerScope(i);
+    } else if (i.customId === 'setchan:goal') {
+      await handleGoalScope(i);
+    }
+  });
+}
+
+// ── Direct goal link (slash command shortcut) ─────────────────────────
 
 async function directLinkGoal(
   interaction: ChatInputCommandInteraction,
@@ -94,29 +145,21 @@ async function directLinkGoal(
   goalQuery: string
 ) {
   const guildId = interaction.guildId!;
-
-  // Look up goal by ID or name (case-insensitive)
   const goal = await Goal.findOne({
     guildId,
     status: 'active',
-    $or: [
-      { goalId: goalQuery },
-      { name: goalQuery },
-    ],
+    $or: [{ goalId: goalQuery }, { name: goalQuery }],
   }).collation({ locale: 'en', strength: 2 });
 
   if (!goal) {
     await interaction.reply({
-      components: [
-        new TextDisplayBuilder().setContent(`❌ No active goal found matching **${goalQuery}**.`)
-      ],
+      components: [new TextDisplayBuilder().setContent(`❌ No active goal found matching **${goalQuery}**.`)],
       flags: [MessageFlags.IsComponentsV2],
-      ephemeral: true,
+    ephemeral: true,
     });
     return;
   }
 
-  // Delete old pinned message if changing channels
   if (goal.channelId && goal.channelId !== channelId) {
     await deleteGoalPinnedMessage(goal);
   }
@@ -130,11 +173,10 @@ async function directLinkGoal(
 
   await interaction.reply({
     components: [
-      new TextDisplayBuilder().setContent(`# ✅ Goal Linked`),
+      new TextDisplayBuilder().setContent('# ✅ Goal Linked'),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent(
-        `**${goal.name}** is now linked to <#${channelId}>.\n` +
-        `A pinned task list will be maintained there.`
+        `**${goal.name}** is now linked to <#${channelId}>.\nA pinned task list will be maintained there.`
       ),
     ],
     flags: [MessageFlags.IsComponentsV2],
@@ -142,58 +184,7 @@ async function directLinkGoal(
   });
 }
 
-// ── Scope Chooser (interactive UI) ───────────────────────────────────
-
-async function showScopeChooser(interaction: ChatInputCommandInteraction | ButtonInteraction) {
-  const components = [
-    new TextDisplayBuilder().setContent('# 📌 Set Channel'),
-    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-    new TextDisplayBuilder().setContent('What would you like to configure?'),
-    new SectionBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('Set the server-wide task list channel')
-      )
-      .setButtonAccessory(
-        new ButtonBuilder()
-          .setCustomId('set-channel-scope:server')
-          .setLabel('Server Task List')
-          .setStyle(ButtonStyle.Primary)
-      ),
-    new SectionBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('Link or unlink a goal to a channel')
-      )
-      .setButtonAccessory(
-        new ButtonBuilder()
-          .setCustomId('set-channel-scope:goal')
-          .setLabel('Goal Channel')
-          .setStyle(ButtonStyle.Primary)
-      ),
-  ];
-
-  const message = await interaction.reply({
-    components,
-    fetchReply: true,
-    flags: [MessageFlags.IsComponentsV2],
-    ephemeral: true,
-  });
-
-  const collector = message.createMessageComponentCollector({
-    filter: (i: any) => i.user.id === interaction.user.id && i.customId.startsWith('set-channel-scope:'),
-    max: 1,
-    time: 60000,
-  });
-
-  collector.on('collect', async (i: any) => {
-    if (i.customId === 'set-channel-scope:server') {
-      await handleServerScope(i);
-    } else {
-      await handleGoalScope(i);
-    }
-  });
-}
-
-// ── Server Scope ──────────────────────────────────────────────────────
+// ── Server scope ──────────────────────────────────────────────────────
 
 async function handleServerScope(interaction: ChatInputCommandInteraction | ButtonInteraction) {
   let targetChannel: { id: string } | null = null;
@@ -206,14 +197,13 @@ async function handleServerScope(interaction: ChatInputCommandInteraction | Butt
   }
 
   if (!targetChannel) {
-    await respond(interaction, [new TextDisplayBuilder().setContent('❌ Could not determine the target channel.')]);
+    await respondToInteraction(interaction, [new TextDisplayBuilder().setContent('❌ Could not determine the target channel.')]);
     return;
   }
 
   try {
     let config = await ServerConfig.findOne({ guildId: interaction.guildId! });
 
-    // Remove old pinned message if config exists
     if (config && config.taskListChannelId && config.taskListMessageId) {
       try {
         const client = getClient();
@@ -242,10 +232,10 @@ async function handleServerScope(interaction: ChatInputCommandInteraction | Butt
     const loadingComponents = [
       new TextDisplayBuilder().setContent('# ✅ Channel Set'),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-      new TextDisplayBuilder().setContent(`Task list channel set to <#${targetChannel.id}>\n\n🔄 Refreshing task list...`)
+      new TextDisplayBuilder().setContent(`Task list channel set to <#${targetChannel.id}>\n\n🔄 Refreshing task list...`),
     ];
 
-    await respond(interaction, loadingComponents);
+    await respondToInteraction(interaction, loadingComponents);
 
     const client = getClient();
     await refreshPinnedTaskList(client, interaction.guildId!);
@@ -253,35 +243,35 @@ async function handleServerScope(interaction: ChatInputCommandInteraction | Butt
     const successComponents = [
       new TextDisplayBuilder().setContent('# ✅ Channel Set'),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-      new TextDisplayBuilder().setContent(`Task list channel set to <#${targetChannel.id}>\n\n✅ Task list has been refreshed in the new channel.`)
+      new TextDisplayBuilder().setContent(`Task list channel set to <#${targetChannel.id}>\n\n✅ Task list has been refreshed in the new channel.`),
     ];
 
     await interaction.editReply({ components: successComponents });
   } catch (error) {
     console.error('Error setting channel:', error);
-    await respond(interaction, [new TextDisplayBuilder().setContent('❌ Failed to set channel. Please try again.')]);
+    await respondToInteraction(interaction, [new TextDisplayBuilder().setContent('❌ Failed to set channel. Please try again.')]);
   }
 }
 
-// ── Goal Scope (interactive picker) ──────────────────────────────────
+// ── Goal scope ────────────────────────────────────────────────────────
 
-async function handleGoalScope(interaction: ChatInputCommandInteraction | ButtonInteraction) {
+async function handleGoalScope(interaction: ButtonInteraction) {
   const guildId = interaction.guildId!;
   const goals = await Goal.find({ guildId, status: 'active' }).lean();
 
   if (goals.length === 0) {
-    await respond(interaction, [new TextDisplayBuilder().setContent('❌ No goals exist yet. Create one first with `/goal`.')]);
+    await interaction.update({
+      components: [new TextDisplayBuilder().setContent('❌ No goals exist yet. Create one first with `/goal`.')],
+    });
     return;
   }
 
   const goalSelect = new StringSelectMenuBuilder()
-    .setCustomId('set-channel-goal-picker')
+    .setCustomId('setchan-goal-picker')
     .setPlaceholder('Select a goal');
 
   for (const goal of goals) {
-    const label = goal.channelId
-      ? `${goal.name} (linked)`
-      : goal.name;
+    const label = goal.channelId ? `${goal.name} (linked)` : goal.name;
     goalSelect.addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel(label)
@@ -299,26 +289,26 @@ async function handleGoalScope(interaction: ChatInputCommandInteraction | Button
     row,
   ];
 
-  const message = await respond(interaction, components, { fetchReply: true });
+  await interaction.update({ components });
+  const message = await interaction.fetchReply();
 
-  const collector = message!.createMessageComponentCollector({
-    filter: (i: any) => i.user.id === interaction.user.id && i.customId === 'set-channel-goal-picker',
+  const collector = message.createMessageComponentCollector({
+    filter: (i: any) => i.user.id === interaction.user.id && i.customId === 'setchan-goal-picker',
     max: 1,
-    time: 60000,
+    time: COLLECTOR_TIMEOUT,
   });
 
   collector.on('collect', async (i: any) => {
     const selectedGoalId = i.values[0];
     const goal = await Goal.findOne({ goalId: selectedGoalId });
     if (!goal) return;
-
-    await showChannelOptions(i, goal);
+    await showGoalChannelOptions(i, goal);
   });
 }
 
-async function showChannelOptions(interaction: any, goal: any) {
+async function showGoalChannelOptions(interaction: any, goal: any) {
   const channelSelect = new ChannelSelectMenuBuilder()
-    .setCustomId(`set-channel-goal-ch:${goal.goalId}`)
+    .setCustomId(`setchan-goal:${goal.goalId}`)
     .setPlaceholder('Select a channel')
     .addChannelTypes(ChannelType.GuildText);
 
@@ -338,12 +328,10 @@ async function showChannelOptions(interaction: any, goal: any) {
   if (goal.channelId) {
     components.push(
       new SectionBuilder()
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent('Remove channel link')
-        )
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('Remove channel link'))
         .setButtonAccessory(
           new ButtonBuilder()
-            .setCustomId(`set-channel-goal-unlink:${goal.goalId}`)
+            .setCustomId(`setchan-unlink:${goal.goalId}`)
             .setLabel('Unlink')
             .setStyle(ButtonStyle.Danger)
         )
@@ -356,29 +344,27 @@ async function showChannelOptions(interaction: any, goal: any) {
   const collector = message.createMessageComponentCollector({
     filter: (i: any) =>
       i.user.id === interaction.user.id &&
-      (i.customId === `set-channel-goal-ch:${goal.goalId}` || i.customId === `set-channel-goal-unlink:${goal.goalId}`),
+      (i.customId === `setchan-goal:${goal.goalId}` || i.customId === `setchan-unlink:${goal.goalId}`),
     max: 1,
-    time: 60000,
+    time: COLLECTOR_TIMEOUT,
   });
 
   collector.on('collect', async (i: any) => {
-    if (i.customId === `set-channel-goal-unlink:${goal.goalId}`) {
+    if (i.customId === `setchan-unlink:${goal.goalId}`) {
       await deleteGoalPinnedMessage(goal);
-
       goal.channelId = undefined;
       goal.messageId = undefined;
       await goal.save();
 
       await i.update({
         components: [
-          new TextDisplayBuilder().setContent(`# ✅ Goal Unlinked`),
+          new TextDisplayBuilder().setContent('# ✅ Goal Unlinked'),
           new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
           new TextDisplayBuilder().setContent(`**${goal.name}** is no longer linked to a channel.`),
         ],
       });
     } else {
       const channelId = i.values[0];
-
       if (goal.channelId && goal.channelId !== channelId) {
         await deleteGoalPinnedMessage(goal);
       }
@@ -392,11 +378,10 @@ async function showChannelOptions(interaction: any, goal: any) {
 
       await i.update({
         components: [
-          new TextDisplayBuilder().setContent(`# ✅ Goal Linked`),
+          new TextDisplayBuilder().setContent('# ✅ Goal Linked'),
           new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
           new TextDisplayBuilder().setContent(
-            `**${goal.name}** is now linked to <#${channelId}>.\n` +
-            `A pinned task list will be maintained there.`
+            `**${goal.name}** is now linked to <#${channelId}>.\nA pinned task list will be maintained there.`
           ),
         ],
       });
@@ -406,21 +391,19 @@ async function showChannelOptions(interaction: any, goal: any) {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-async function respond(
+async function respondToInteraction(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
-  components: any[],
-  options?: { fetchReply?: boolean }
+  components: any[]
 ) {
   if (interaction instanceof ButtonInteraction) {
     await interaction.update({ components });
-    return options?.fetchReply ? interaction.fetchReply() : undefined;
-  }
-  return interaction.reply({
-    components,
-    fetchReply: options?.fetchReply,
-    flags: [MessageFlags.IsComponentsV2],
+  } else {
+    await interaction.reply({
+      components,
+      flags: [MessageFlags.IsComponentsV2],
     ephemeral: true,
-  });
+    });
+  }
 }
 
 async function deleteGoalPinnedMessage(goal: any) {

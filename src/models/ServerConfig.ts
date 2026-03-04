@@ -6,7 +6,6 @@ export interface IServerConfig extends Document {
   taskListMessageId?: string;
   timezone: string;
   reminderCadence: string[];
-  adminRoleIds: string[];
 }
 
 const serverConfigSchema = new Schema<IServerConfig>({
@@ -15,7 +14,6 @@ const serverConfigSchema = new Schema<IServerConfig>({
   taskListMessageId: { type: String, default: null },
   timezone: { type: String, default: 'UTC' },
   reminderCadence: { type: [String], default: [] },
-  adminRoleIds: { type: [String], default: [] },
 }, {
   timestamps: true,
 });

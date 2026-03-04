@@ -67,7 +67,8 @@ A singleton `CommandRegistry` stores all commands in a `Map<name, Command>`:
 2. If not found → shows execution error.
 3. If not implemented and triggered via button → shows "under construction" message.
 4. Validates guild context if `requiresGuild` is true.
-5. Calls `command.execute(interaction)` with try/catch error handling.
+5. Checks permissions via `checkCommandPermission()` — denies with ephemeral message if the user lacks access.
+6. Calls `command.execute(interaction)` with try/catch error handling.
 
 ### Command picker
 `/taysr` and `/help` both open an interactive command picker (Components V2):
@@ -99,10 +100,14 @@ On startup:
 4. Commands are registered guild-scoped in dev (when `DISCORD_DEV_GUILD_ID` is set), globally in production.
 
 ## Roles and permissions
-- Config commands are role-restricted.
-- Task commands are allowed for:
-  - Members with configured roles, or
-  - The task creator
+- **Fully customizable per-command role system** — any Discord role can be assigned to any command, with no limits on roles or commands.
+- **Discord admins always bypass** — users with the Discord `Administrator` permission have full access to every command regardless of configuration.
+- **Public by default** — commands with no role restrictions are open to everyone.
+- **Dedicated `CommandPermission` collection** — stores per-guild, per-command role mappings in MongoDB.
+- `/settings` → Permissions allows admins to configure which roles can use each command.
+- `/set-manager-role` is a convenience shortcut that restricts a preset list of manager commands to a chosen role in one action.
+- The **command picker** hides commands the user doesn't have access to.
+- The **executor** checks permissions before every command execution.
 - Anyone can view tasks via the pinned list or `/list`.
 
 ## Component-driven input
@@ -259,6 +264,32 @@ On startup:
   - Step 1: Modal with Goal Name and Description.
   - Step 2: "Link Channel" or "Skip" buttons.
   - Step 3 (if linking): Channel Select to pick a text channel.
+
+### /settings
+- **Status:** Implemented
+- Inputs:
+  - channel (optional; target text channel)
+  - goal (optional; goal name or ID to link)
+- Behavior:
+  - **No args**: Shows an interactive settings menu with three sections:
+    - **Channels** — set server task list channel or link goals to channels (same logic as `/set-channel`).
+    - **Permissions** — per-command role management. Shows a paginated list of all guild commands with their current permission state ("Public" or role names). Each command has a "Configure" button to add/remove roles or make it public.
+    - **Timezone & Reminders** — placeholder for future features.
+  - **Channel only** (`/settings #channel`): Sets the server task list channel directly.
+  - **Channel + goal** (`/settings #channel GoalName`): Links a goal to a channel.
+  - Uses `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` to hide from non-admins in Discord UI (but actual enforcement is via the permission system).
+- Requires guild context.
+
+### /set-manager-role
+- **Status:** Implemented
+- Inputs: none (role selected via Role Select menu)
+- Behavior:
+  - Shows a Role Select menu to pick a role.
+  - On selection, restricts a preset list of manager commands (`refresh`, `assign`, `unassign`, `delete`, `edit`, `goal`) to that role.
+  - Additive — running multiple times with different roles gives all selected roles access.
+  - Uses `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` to hide from non-admins in Discord UI.
+  - Shows confirmation with list of restricted commands and a note about `/settings` for fine-tuning.
+- Requires guild context.
 
 ## Planned commands
 
@@ -448,7 +479,13 @@ Notes: Confirm with coaches before posting
 - task_list_message_id (string, nullable until set)
 - timezone (string, IANA tz)
 - reminder_cadence (string or array of durations)
-- admin_role_ids (array of string)
+
+### CommandPermission
+- guild_id (string, part of compound PK)
+- command_name (string, part of compound PK)
+- role_ids (array of string, Discord role IDs allowed to use this command)
+- Compound unique index: { guild_id, command_name }
+- If no document exists for a command, or role_ids is empty, the command is public
 
 ### Goal
 - goal_id (string, unique short ID)
