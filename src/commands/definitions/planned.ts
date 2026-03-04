@@ -15,28 +15,6 @@ const notImplementedExecute = async () => {
 export const plannedCommands: Command[] = [
   {
     metadata: {
-      name: 'edit',
-      emoji: '✏️',
-      description: 'Edit an existing task',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('edit').setDescription('Edit an existing task'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
-      name: 'delete',
-      emoji: '🗑️',
-      description: 'Delete a task',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('delete').setDescription('Delete a task'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'list',
       emoji: '📋',
       description: 'List all tasks',
@@ -66,6 +44,28 @@ export const plannedCommands: Command[] = [
       requiresGuild: true,
     },
     build: () => new SlashCommandBuilder().setName('set-reminders').setDescription('Configure task reminders'),
+    execute: notImplementedExecute,
+  },
+  {
+    metadata: {
+      name: 'bug-report',
+      emoji: '🐛',
+      description: 'Report a bug',
+      implemented: false,
+      requiresGuild: true,
+    },
+    build: () => new SlashCommandBuilder().setName('bug-report').setDescription('Report a bug'),
+    execute: notImplementedExecute,
+  },
+  {
+    metadata: {
+      name: 'bugs',
+      emoji: '🪲',
+      description: 'View bug reports',
+      implemented: false,
+      requiresGuild: true,
+    },
+    build: () => new SlashCommandBuilder().setName('bugs').setDescription('View and manage bug reports'),
     execute: notImplementedExecute,
   },
 ];

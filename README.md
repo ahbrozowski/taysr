@@ -19,7 +19,7 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 
 ## Commands
 
-### Implemented Commands (8)
+### Implemented Commands (13)
 
 | Command | Icon | Description |
 |---------|------|-------------|
@@ -31,17 +31,19 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 | `/set-channel` | 📌 | Configure which channel displays the pinned task list |
 | `/set-goal-channel` | 🔗 | Link or unlink a goal to/from a channel for a focused task list |
 | `/refresh` | 🔄 | Rebuild the pinned task list from database |
+| `/assign` | 👥 | Assign a task to a user via task picker and user select |
+| `/take` | ✋ | Self-assign an unassigned task |
+| `/unassign` | ❌ | Remove assignee from a task |
+| `/delete` | 🗑️ | Delete a task with confirmation |
+| `/edit` | ✏️ | Edit a task - change goal, title, due date, notes, and assignee |
 
-### Planned Commands (8)
+### Planned Commands (5)
 
-- `/take` - Take ownership of an unassigned task
-- `/assign` - Assign a task to a user
-- `/unassign` - Remove assignment from a task
-- `/edit` - Edit an existing task
-- `/delete` - Delete a task
 - `/list` - View all tasks with filtering options
 - `/set-timezone` - Configure server timezone for due dates
 - `/set-reminders` - Configure reminder cadence for upcoming tasks
+- `/bug-report` - Report a bug with title, description, and severity
+- `/bugs` - View and manage bug reports
 
 ## Tech Stack
 
@@ -169,11 +171,16 @@ taysr/
 │   │       ├── create.ts
 │   │       ├── goal.ts
 │   │       ├── help.ts
+│   │       ├── assign.ts
+│   │       ├── delete.ts
+│   │       ├── edit.ts
 │   │       ├── planned.ts       # Planned command definitions
 │   │       ├── refresh.ts
 │   │       ├── set-channel.ts
 │   │       ├── set-goal-channel.ts
-│   │       └── taysr.ts
+│   │       ├── take.ts
+│   │       ├── taysr.ts
+│   │       └── unassign.ts
 │   ├── models/
 │   │   ├── index.ts             # MongoDB connection and initialization
 │   │   ├── Task.ts              # Task schema and model
@@ -256,7 +263,8 @@ The [src/utils/taskId.ts](src/utils/taskId.ts) utility implements atomic counter
 
 The pinned task list automatically updates when:
 - New tasks are created
-- Tasks are marked complete
+- Tasks are marked complete, edited, or deleted
+- Tasks are assigned, taken, or unassigned
 - Goals are linked/unlinked from channels
 - The `/refresh` command is executed
 
@@ -351,9 +359,8 @@ When modifying Mongoose models:
 
 ### Upcoming Features
 
-- **Task Assignment System** - `/take`, `/assign`, `/unassign` commands
-- **Task Management** - `/edit` and `/delete` commands
 - **Advanced Listing** - `/list` command with filtering and sorting
+- **Bug Tracking** - `/bug-report` and `/bugs` commands
 - **Timezone Support** - Server-specific timezone configuration
 - **Task Reminders** - Automated reminders for upcoming due dates
 - **Recurring Tasks** - Support for repeating tasks
