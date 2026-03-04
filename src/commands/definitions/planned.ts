@@ -15,39 +15,6 @@ const notImplementedExecute = async () => {
 export const plannedCommands: Command[] = [
   {
     metadata: {
-      name: 'take',
-      emoji: '✋',
-      description: 'Self-assign a task',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('take').setDescription('Self-assign a task'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
-      name: 'assign',
-      emoji: '👥',
-      description: 'Assign a task to someone',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('assign').setDescription('Assign a task to someone'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
-      name: 'unassign',
-      emoji: '❌',
-      description: 'Remove assignee',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('unassign').setDescription('Remove assignee from a task'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'edit',
       emoji: '✏️',
       description: 'Edit an existing task',

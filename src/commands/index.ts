@@ -7,6 +7,9 @@ import { refreshCommand } from './definitions/refresh';
 import { completeCommand } from './definitions/complete';
 import { goalCommand } from './definitions/goal';
 import { setGoalChannelCommand } from './definitions/set-goal-channel';
+import { assignCommand } from './definitions/assign';
+import { takeCommand } from './definitions/take';
+import { unassignCommand } from './definitions/unassign';
 import { plannedCommands } from './definitions/planned';
 
 /**
@@ -25,6 +28,9 @@ export function initializeCommands(taysrCommandName: string): void {
   commandRegistry.register(completeCommand);
   commandRegistry.register(goalCommand);
   commandRegistry.register(setGoalChannelCommand);
+  commandRegistry.register(assignCommand);
+  commandRegistry.register(takeCommand);
+  commandRegistry.register(unassignCommand);
 
   // Register all planned commands
   for (const command of plannedCommands) {
