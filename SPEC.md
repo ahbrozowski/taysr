@@ -179,16 +179,18 @@ On startup:
 ### /set-channel
 - **Status:** Implemented
 - Inputs:
-  - channel (optional slash command option; defaults to current channel)
+  - channel (optional; target text channel, defaults to current channel)
+  - goal (optional; goal name or ID to link to the channel)
 - Behavior:
-  - Sets the server task list channel.
-  - Deletes old pinned message from previous channel if one exists.
-  - Creates or updates `ServerConfig` in database.
-  - Calls `refreshPinnedTaskList` to create the pinned message in the new channel.
+  - **No args**: Shows an interactive scope chooser ("Server Task List" / "Goal Channel") — same UI as the command picker entry point.
+  - **Channel only** (`/set-channel #ops-tasks`): Sets the server task list channel directly. Deletes old pinned message if one exists. Creates or updates `ServerConfig`. Calls `refreshPinnedTaskList`.
+  - **Channel + goal** (`/set-channel #marketing Bout Prep`): Directly links the goal to the channel. Looks up the goal by ID or name (case-insensitive). Deletes old pinned message if changing channels. Sets `Goal.channelId` and creates a pinned task list via `updateGoalPinnedList`.
+  - **Goal scope (interactive)**: From the scope chooser, shows a goal picker (String Select of active goals with "(linked)" suffix). After selecting a goal, shows a Channel Select and (if currently linked) an "Unlink" button. Linking sets `Goal.channelId` and creates a pinned task list. Unlinking deletes the pinned message and clears `Goal.channelId`/`messageId`.
 - Requires guild context.
 - Component flow:
-  - From slash command: uses the `channel` option or defaults to current channel.
-  - From command picker: uses the current channel.
+  - From slash command with channel only: sets server task list directly using the channel option.
+  - From slash command with channel + goal: links goal to channel directly (no UI).
+  - From slash command with no args or from command picker: scope chooser → "Server Task List" or "Goal Channel" → appropriate flow.
 
 ### /refresh
 - **Status:** Implemented
@@ -257,22 +259,6 @@ On startup:
   - Step 1: Modal with Goal Name and Description.
   - Step 2: "Link Channel" or "Skip" buttons.
   - Step 3 (if linking): Channel Select to pick a text channel.
-
-### /set-goal-channel
-- **Status:** Implemented
-- Inputs (collected via goal picker + Channel Select):
-  - goal selection (required)
-  - channel selection or unlink (required)
-- Behavior:
-  - Shows a String Select of active goals (with "(linked)" label if already linked).
-  - If no goals exist, shows an error directing to `/goal`.
-  - After selecting a goal, shows a Channel Select and (if currently linked) an "Unlink" button.
-  - Linking a new channel: deletes old pinned message if changing channels, sets `channelId`, creates pinned task list.
-  - Unlinking: deletes the goal's pinned message, clears `channelId` and `messageId`.
-- Requires guild context.
-- Component flow:
-  - Step 1: Goal picker (String Select of active goals).
-  - Step 2: Channel Select to pick a channel, or "Unlink" button if currently linked.
 
 ## Planned commands
 
@@ -390,7 +376,7 @@ The following commands are registered in the command registry but **not** deploy
 - The pinned message also includes a short "How to use" guide with a `/help` example.
 
 ### Goal-specific pinned lists
-- Goals can optionally be linked to a specific channel via `/goal` or `/set-goal-channel`.
+- Goals can optionally be linked to a specific channel via `/goal` or `/set-channel #channel GoalName`.
 - When linked, the channel gets its own pinned message showing only open tasks for that goal.
 - Goal-specific pinned lists are updated alongside the main list on every task change affecting that goal.
 - Unlinking a goal from a channel deletes the goal’s pinned message from that channel.

@@ -4,7 +4,7 @@ import {
   SlashCommandBuilder,
   ActionRowBuilder,
   UserSelectMenuBuilder,
-  ComponentType,
+  MessageFlags,
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
@@ -49,19 +49,17 @@ export const assignCommand: Command = {
             new TextDisplayBuilder().setContent('Select a user to assign this task to:'),
             row,
           ],
+          flags: [MessageFlags.IsComponentsV2],
         });
 
-        try {
-          const selectInteraction = await i.channel?.awaitMessageComponent({
-            filter: (si: any) =>
-              si.user.id === i.user.id &&
-              si.customId === `assign-user:${task._id}`,
-            componentType: ComponentType.UserSelect,
-            time: 60000,
-          });
+        const message = await i.fetchReply();
+        const collector = message.createMessageComponentCollector({
+          filter: (si: any) => si.user.id === i.user.id && si.customId === `assign-user:${task._id}`,
+          time: 60000,
+          max: 1,
+        });
 
-          if (!selectInteraction) return;
-
+        collector.on('collect', async (selectInteraction: any) => {
           const assigneeId = selectInteraction.values[0];
           task.assigneeId = assigneeId;
           await task.save();
@@ -82,9 +80,7 @@ export const assignCommand: Command = {
               ),
             ],
           });
-        } catch (error) {
-          // Timeout
-        }
+        });
       },
     });
   },

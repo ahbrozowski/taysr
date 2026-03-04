@@ -10,10 +10,8 @@ import {
   ModalSubmitInteraction,
   ButtonInteraction,
   UserSelectMenuBuilder,
-  UserSelectMenuInteraction,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  ComponentType,
   MessageFlags,
   TextDisplayBuilder,
   SectionBuilder,
@@ -94,41 +92,31 @@ export const createCommand: Command = {
         row,
       ];
 
-      if (interaction instanceof ButtonInteraction) {
-        await interaction.update({ components });
-      } else {
-        await interaction.reply({
-          components,
-          flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
-        });
-      }
+      const message = await interaction.reply({
+        components,
+        flags: [MessageFlags.IsComponentsV2],
+        ephemeral: true,
+        fetchReply: true,
+      });
 
-      try {
-        const goalInteraction = await interaction.channel?.awaitMessageComponent({
-          filter: (i) =>
-            i.user.id === interaction.user.id &&
-            i.customId === 'create-goal-picker',
-          componentType: ComponentType.StringSelect,
-          time: 60000,
-        });
+      const collector = message.createMessageComponentCollector({ time: 60000 });
 
-        if (!goalInteraction) return;
+      collector.on('collect', async (i: any) => {
+        if (i.customId === 'create-goal-picker') {
+          collector.stop();
+          const selected = i.values[0];
 
-        const selected = goalInteraction.values[0];
-
-        if (selected === '__new_goal__') {
-          // Show modal for new goal name, then task modal
-          await handleNewGoalThenTask(goalInteraction, guildId);
-        } else {
-          const goalId = selected === '__no_goal__' ? undefined : selected;
-          await showTaskModal(goalInteraction, guildId, goalId);
+          if (selected === '__new_goal__') {
+            await handleNewGoalThenTask(i, guildId);
+          } else {
+            const goalId = selected === '__no_goal__' ? undefined : selected;
+            await showTaskModal(i, guildId, goalId);
+          }
         }
-      } catch (error) {
-        // Timeout
-      }
+      });
     } else {
       // No goals exist — go straight to task modal (with option to create goal inline)
-      await showTaskModalDirect(interaction, guildId);
+      await showTaskModal(interaction, guildId);
     }
   },
 };
@@ -165,7 +153,7 @@ async function handleNewGoalThenTask(interaction: any, guildId: string) {
     const goalName = goalModal.fields.getTextInputValue('goal-name');
 
     // Check for duplicate
-    const existing = await Goal.findOne({ guildId, name: goalName }).collation({ locale: 'en', strength: 2 });
+    const existing = await Goal.findOne({ guildId, name: goalName }).collation({ locale: 'en', strength: 2 }).lean();
     if (existing) {
       // Use existing goal instead of failing
       await showTaskModal(goalModal, guildId, existing.goalId);
@@ -177,7 +165,7 @@ async function handleNewGoalThenTask(interaction: any, guildId: string) {
 
     await showTaskModal(goalModal, guildId, goalId);
   } catch (error) {
-    console.log('Inline goal modal timed out or was cancelled');
+    // Timeout — normal flow
   }
 }
 
@@ -229,61 +217,10 @@ async function showTaskModal(interaction: any, guildId: string, goalId?: string)
 
     await handleTaskModalSubmit(modalSubmit, guildId, goalId);
   } catch (error) {
-    console.log('Task modal submission timed out or was cancelled');
+    // Timeout — normal flow
   }
 }
 
-/**
- * Shortcut when no goals exist — goes straight to modal without goal picker.
- */
-async function showTaskModalDirect(interaction: ChatInputCommandInteraction | ButtonInteraction, guildId: string) {
-  const modal = new ModalBuilder()
-    .setCustomId('create-task-modal')
-    .setTitle('Create New Task');
-
-  const titleInput = new TextInputBuilder()
-    .setCustomId('task-title')
-    .setLabel('Task Title')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('e.g., Design bout flyer')
-    .setRequired(true)
-    .setMaxLength(100);
-
-  const datetimeInput = new TextInputBuilder()
-    .setCustomId('task-datetime')
-    .setLabel('Due Date & Time (YYYY-MM-DD HH:mm)')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('2026-05-15 18:00')
-    .setRequired(true);
-
-  const notesInput = new TextInputBuilder()
-    .setCustomId('task-notes')
-    .setLabel('Notes (optional)')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Additional details or context')
-    .setRequired(false)
-    .setMaxLength(500);
-
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(datetimeInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(notesInput)
-  );
-
-  await interaction.showModal(modal);
-
-  try {
-    const modalSubmit = await interaction.awaitModalSubmit({
-      filter: (i: ModalSubmitInteraction) =>
-        i.customId === 'create-task-modal' && i.user.id === interaction.user.id,
-      time: 300000,
-    });
-
-    await handleTaskModalSubmit(modalSubmit, guildId);
-  } catch (error) {
-    console.log('Task modal submission timed out or was cancelled');
-  }
-}
 
 async function handleTaskModalSubmit(interaction: ModalSubmitInteraction, guildId: string, goalId?: string) {
   if (!guildId) return;
@@ -299,7 +236,8 @@ async function handleTaskModalSubmit(interaction: ModalSubmitInteraction, guildI
       components: [
         new TextDisplayBuilder().setContent('❌ Invalid date/time. Please use YYYY-MM-DD HH:mm format with a future date (e.g., 2026-05-15 18:00)')
       ],
-      flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+      flags: [MessageFlags.IsComponentsV2],
+      ephemeral: true,
     });
     return;
   }
@@ -346,33 +284,36 @@ async function handleTaskModalSubmit(interaction: ModalSubmitInteraction, guildI
       ),
   ];
 
-  await interaction.reply({
+  const assignMessage = await interaction.reply({
     components,
-    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
+    fetchReply: true,
   });
 
-  try {
-    const buttonInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (i) =>
-        i.user.id === interaction.user.id &&
-        (i.customId.startsWith('assign-task:') || i.customId.startsWith('leave-unassigned:')),
-      componentType: ComponentType.Button,
-      time: 60000,
-    }) as ButtonInteraction;
+  const assignCollector = assignMessage.createMessageComponentCollector({ time: 60000 });
 
-    if (buttonInteraction.customId.startsWith('assign-task:')) {
-      await handleAssignTask(buttonInteraction, taskData);
-    } else {
-      await handleLeaveUnassigned(buttonInteraction, taskData);
+  assignCollector.on('collect', async (i: any) => {
+    assignCollector.stop();
+    if (i.customId.startsWith('assign-task:')) {
+      await handleAssignTask(i, taskData);
+    } else if (i.customId.startsWith('leave-unassigned:')) {
+      await handleLeaveUnassigned(i, taskData);
     }
-  } catch (error) {
-    await createTask(taskData, guildId);
-    await interaction.editReply({
-      components: [
-        new TextDisplayBuilder().setContent(`✅ Task **${taskId}** created (unassigned due to timeout).`)
-      ],
-    });
-  }
+  });
+
+  assignCollector.on('end', async (collected) => {
+    if (collected.size === 0) {
+      const ok = await createTask(taskData, guildId);
+      await interaction.editReply({
+        components: [
+          new TextDisplayBuilder().setContent(
+            ok ? `✅ Task **${taskId}** created (unassigned due to timeout).` : '❌ Failed to create task. Please try again.'
+          )
+        ],
+      });
+    }
+  });
 }
 
 async function handleAssignTask(
@@ -398,82 +339,84 @@ async function handleAssignTask(
     components: [...components, row],
   });
 
-  // Wait for user selection
-  try {
-    const selectInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (i) =>
-        i.user.id === interaction.user.id &&
-        i.customId.startsWith('select-assignee:'),
-      componentType: ComponentType.UserSelect,
-      time: 60000,
-    }) as UserSelectMenuInteraction;
+  const selectMessage = await interaction.fetchReply();
+  const selectCollector = selectMessage.createMessageComponentCollector({ time: 60000 });
 
-    const assigneeId = selectInteraction.values[0];
+  selectCollector.on('collect', async (i: any) => {
+    selectCollector.stop();
+    const assigneeId = i.values[0];
     taskData.assigneeId = assigneeId;
 
-    await createTask(taskData, interaction.guildId!);
+    const ok = await createTask(taskData, interaction.guildId!);
 
-    await selectInteraction.update({
-      components: [
-        new TextDisplayBuilder().setContent(`# ✅ Task Created`),
-        new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-        new TextDisplayBuilder().setContent(`Task **${taskData.taskId}** has been created and assigned to <@${assigneeId}>!`),
-      ],
+    await i.update({
+      components: ok
+        ? [
+            new TextDisplayBuilder().setContent(`# ✅ Task Created`),
+            new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+            new TextDisplayBuilder().setContent(`Task **${taskData.taskId}** has been created and assigned to <@${assigneeId}>!`),
+          ]
+        : [new TextDisplayBuilder().setContent('❌ Failed to create task. Please try again.')],
     });
-  } catch (error) {
-    // Timeout - create unassigned
-    await createTask(taskData, interaction.guildId!);
-    await interaction.editReply({
-      components: [
-        new TextDisplayBuilder().setContent(`✅ Task **${taskData.taskId}** created (unassigned due to timeout).`)
-      ],
-    });
-  }
+  });
+
+  selectCollector.on('end', async (collected) => {
+    if (collected.size === 0) {
+      const ok = await createTask(taskData, interaction.guildId!);
+      await interaction.editReply({
+        components: [
+          new TextDisplayBuilder().setContent(
+            ok ? `✅ Task **${taskData.taskId}** created (unassigned due to timeout).` : '❌ Failed to create task. Please try again.'
+          )
+        ],
+      });
+    }
+  });
 }
 
 async function handleLeaveUnassigned(
   interaction: ButtonInteraction,
   taskData: TaskCreationData
 ) {
-  await createTask(taskData, interaction.guildId!);
+  const ok = await createTask(taskData, interaction.guildId!);
 
   await interaction.update({
-    components: [
-      new TextDisplayBuilder().setContent(`# ✅ Task Created`),
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-      new TextDisplayBuilder().setContent(`Task **${taskData.taskId}** has been created (unassigned).`),
-    ],
+    components: ok
+      ? [
+          new TextDisplayBuilder().setContent(`# ✅ Task Created`),
+          new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+          new TextDisplayBuilder().setContent(`Task **${taskData.taskId}** has been created (unassigned).`),
+        ]
+      : [new TextDisplayBuilder().setContent('❌ Failed to create task. Please try again.')],
   });
 }
 
-async function createTask(taskData: TaskCreationData, guildId: string) {
-  console.log('[CREATE] Creating task in database:', JSON.stringify(taskData, null, 2));
+async function createTask(taskData: TaskCreationData, guildId: string): Promise<boolean> {
+  const MAX_RETRIES = 5;
 
-  try {
-    // Create the task in the database
-    const createdTask = await Task.create(taskData);
-    console.log('[CREATE] Task created successfully, ID:', createdTask._id);
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      await Task.create(taskData);
 
-    // Update the pinned task list
-    const client = getClient();
-    await updatePinnedTaskList(client, guildId);
+      const client = getClient();
+      await updatePinnedTaskList(client, guildId);
 
-    // Update goal-specific pinned list if task belongs to a goal
-    if (taskData.goalId) {
-      await updateGoalPinnedList(client, taskData.goalId);
+      if (taskData.goalId) {
+        await updateGoalPinnedList(client, taskData.goalId);
+      }
+      return true;
+    } catch (error: any) {
+      if (error.code === 11000 && attempt < MAX_RETRIES - 1) {
+        // Counter out of sync — generate a fresh ID and retry
+        console.error(`Duplicate taskId ${taskData.taskId}, retrying with new ID...`);
+        taskData.taskId = await generateTaskId(guildId);
+        continue;
+      }
+      console.error('Error creating task:', error);
+      return false;
     }
-    console.log('[CREATE] Pinned task list(s) updated');
-  } catch (error: any) {
-    console.error('[CREATE] ERROR creating task:');
-    console.error('  Error name:', error.name);
-    console.error('  Error code:', error.code);
-    console.error('  Error message:', error.message);
-    if (error.code === 11000) {
-      console.error('  Duplicate key error! TaskId already exists:', taskData.taskId);
-      console.error('  This means the task counter is out of sync with the database');
-    }
-    throw error;
   }
+  return false;
 }
 
 function parseDateTime(datetimeStr: string): Date | null {

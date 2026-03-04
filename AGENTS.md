@@ -1,55 +1,152 @@
 # AGENTS.md
 
 ## Project overview
-- TypeScript Discord bot using `discord.js` v14.
-- Current runtime behavior is prefix commands in `src/index.ts`.
-- `SPEC.md` and `PLAN.md` describe a larger slash-command task system that is not implemented yet.
+
+TypeScript Discord bot using `discord.js` v14 with Components V2.
+Independent top-level slash commands (`/create`, `/complete`, `/assign`, etc.) — NOT subcommands under `/taysr`.
+Mongoose ORM for MongoDB. Modular command system with registry, executor, and interactive command picker.
+
+## ⚠️ CRITICAL: Design Philosophy — READ BEFORE WRITING ANY CODE
+
+The project owner hand-wrote `src/utils/taskSelector.ts` as the **gold standard reference**.
+Every interactive command MUST follow its patterns exactly. No exceptions, no "alternative approaches."
+
+If your code doesn't match `taskSelector.ts`, it is wrong. Period.
+
+### The Rules
+
+**1. Collector-based interaction — ALWAYS**
+```typescript
+// ✅ CORRECT — collector on the message
+const message = await interaction.reply({
+  components: await render(state, options),
+  fetchReply: true,
+  flags: [MessageFlags.IsComponentsV2],
+  ephemeral: true,
+});
+const collector = message.createMessageComponentCollector({ time: 120000 });
+collector.on('collect', async (i) => { /* handle interaction */ });
+
+// ❌ WRONG — one-shot await on channel
+const i = await interaction.channel?.awaitMessageComponent({ ... });
+```
+
+`awaitMessageComponent` is banned for component interactions. It listens on the CHANNEL (not the message),
+is one-shot, and doesn't compose. Use `createMessageComponentCollector` on the **message itself**.
+
+The ONLY exception is `awaitModalSubmit` — Discord.js has no collector API for modals.
+
+**2. State + render pattern**
+```typescript
+// State object holds all UI state
+let state: SomeState = { page: 0 };
+
+// Pure render function builds components from state
+async function render(state: SomeState) { return [...components]; }
+
+// Collector updates state and re-renders
+collector.on('collect', async (i) => {
+  state.page++;
+  await i.update({ components: await render(state) });
+});
+```
+
+**3. Ephemeral flags — separate param**
+```typescript
+// ✅ CORRECT
+await interaction.reply({
+  flags: [MessageFlags.IsComponentsV2],
+  ephemeral: true,
+});
+
+// ❌ WRONG — Ephemeral in flags array
+await interaction.reply({
+  flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+});
+```
+
+**4. Logging — errors only**
+```typescript
+// ✅ CORRECT — only log errors
+console.error('Failed to update pinned task list:', err);
+
+// ❌ WRONG — logging normal flow
+console.log('[CREATE] Creating task in database:', data);
+console.log('[CREATE] Task created successfully');
+console.log('Modal timed out');
+```
+
+No `console.log` on normal code paths. Timeouts are normal — don't log them.
+Only use `console.error` for actual errors.
+
+**5. `.lean()` on read-only queries**
+```typescript
+// ✅ CORRECT — read-only, use lean
+const goals = await Goal.find({ guildId, status: 'active' }).lean();
+
+// ❌ WRONG — full Mongoose document for a read
+const goals = await Goal.find({ guildId, status: 'active' });
+```
+
+If you're not calling `.save()` on the result, use `.lean()`.
+
+**6. Button styles**
+- `ButtonStyle.Primary` — action buttons (Complete, Assign, Run, etc.)
+- `ButtonStyle.Secondary` — navigation/passive (Previous, Next, Skip, Coming Soon)
+- `ButtonStyle.Danger` — destructive only (Delete, Unlink)
+
+**7. Component building — SectionBuilder pattern**
+```typescript
+new SectionBuilder()
+  .addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`**${task.taskId}** • ${task.title}`)
+  )
+  .setButtonAccessory(
+    new ButtonBuilder()
+      .setCustomId(`cmd:${task._id.toString()}`)
+      .setLabel('Complete')
+      .setStyle(ButtonStyle.Primary)
+  )
+```
+
+**8. No code duplication**
+If you're copy-pasting a function and changing one parameter, you're doing it wrong.
+Extract it. Parameterize it. The owner hates duplicate code.
+
+## Architecture
+
+### Command system
+- **Registry** (`src/commands/registry.ts`): singleton Map, `getImplemented()` / `getPlanned()` methods
+- **Executor** (`src/commands/executor.ts`): central routing from `ButtonInteraction` → command
+- **Command interface**: `{ metadata, build(), execute() }`
+- **Command picker** (`src/utils/commandPicker.ts`): interactive UI listing all commands
+- **Task selector** (`src/utils/taskSelector.ts`): reusable paginated task list with filters
+
+### Data models (Mongoose)
+- `Task` — taskId (T-001), title, dueAt, goalId, assigneeId, guildId, status
+- `Goal` — goalId (G-001), name, guildId, channelId, messageId, status
+- `Counter` — atomic guild-scoped ID generation
+- `Config` — guild settings (channelId, messageId for pinned lists)
+
+### ID generation
+- `generateTaskId(guildId)` → `T-001`, `T-002`, ...
+- `generateGoalId(guildId)` → `G-001`, `G-002`, ...
+- Uses atomic `Counter.findOneAndUpdate` with `$inc`
 
 ## Local setup
-- Prereqs: Node.js 20+ and npm.
-- Install: `npm install`.
-- Env: copy `.env.example` to `.env`.
-  - Required: `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`
-  - Dev-only: `DISCORD_DEV_GUILD_ID` (optional; enables fast guild-scoped registration)
-  - Dev-only: `DEV_COMMAND_PREFIX` (override slash command name, default `taysr`)
-  - Optional (needed for `!task`): `MONGODB_URI`, `MONGODB_DB`
+- Node.js 20+, npm
+- `npm install`
+- Env: `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `MONGODB_URI`
+- Dev-only: `DISCORD_DEV_GUILD_ID` (guild-scoped registration), `DEV_COMMAND_PREFIX`
 
 ## Run / build
-- Dev (auto-reload): `npm run dev`
+- Dev: `npm run dev`
 - Build: `npm run build`
-- Run built app: `npm start`
-- Tests: none configured
+- Start: `npm start`
 
-## Current commands
-- `!ping`, `!hello`, `!time`, `!days`, `!help`, `!task`
-- `!task` reads from MongoDB `tasks` collection and prints a summary.
-- `/taysr help` is registered as a slash command (WIP).
+## Implemented commands
+`/taysr`, `/help`, `/create`, `/complete`, `/assign`, `/take`, `/unassign`,
+`/goal`, `/set-channel`, `/refresh`
 
-## Deployment
-- PM2 (preferred):
-  - Start: `pm2 start ecosystem.config.js` (or `pm2 start dist/index.js --name taysr`)
-  - Logs: `pm2 logs taysr`
-  - Restart: `pm2 restart taysr`
-- Systemd:
-  - Update placeholders in `taysr.service`
-  - Install to `/etc/systemd/system/taysr.service`
-  - `sudo systemctl daemon-reload && sudo systemctl enable --now taysr`
-  - Logs: `sudo journalctl -u taysr -f`
-- Full GCP walkthrough: `DEPLOYMENT.md`
-- Update helper: `deploy.sh` (assumes repo at `~/taysr` and PM2 app name `taysr`)
-
-## Fixing / extending
-- All bot logic lives in `src/index.ts`.
-- To align with `SPEC.md`, replace message-content commands with slash commands + interaction handlers.
-  - When moving to slash commands, you can drop `GatewayIntentBits.MessageContent` if not needed.
-- Slash commands register to a dev guild when `NODE_ENV` is not `production` and `DISCORD_DEV_GUILD_ID` is set; otherwise they register globally.
-  - `DEV_COMMAND_PREFIX` only applies in dev; production always uses `/taysr`.
-- If you keep MongoDB, define a clear schema for `tasks` and add server scoping.
-- Consider splitting into modules (`commands/`, `db/`, `scheduler/`) as the feature set grows.
-
-## Troubleshooting
-- Bot fails to start: check `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, and Discord portal intents.
-- Slash commands not appearing in dev: confirm `DISCORD_DEV_GUILD_ID` and that the bot is in that server.
-- Slash command name invalid: `DEV_COMMAND_PREFIX` must be lowercase, 1-32 chars, and match `^[a-z0-9-]{1,32}$`.
-- `!task` fails: verify `MONGODB_URI` connectivity and `tasks` collection data.
-- No output: check PM2 or systemd logs.
+## Planned commands
+`/edit`, `/delete`, `/list`, `/bug-report`, `/bugs`, `/set-timezone`, `/set-reminders`

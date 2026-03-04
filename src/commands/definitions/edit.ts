@@ -12,7 +12,6 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   UserSelectMenuBuilder,
-  ComponentType,
   MessageFlags,
   TextDisplayBuilder,
   SeparatorBuilder,
@@ -88,37 +87,28 @@ async function showGoalPicker(task: any, interaction: any, guildId: string) {
       .setDefault(!task.goalId)
   );
 
-  await interaction.update({
+  const message = await interaction.update({
     components: [
       new TextDisplayBuilder().setContent(`# ✏️ Edit: ${task.title}`),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent('Select a goal for this task:'),
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(goalSelect),
     ],
+    fetchReply: true,
   });
 
-  try {
-    const goalInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (si: any) =>
-        si.user.id === interaction.user.id &&
-        si.customId === 'edit-goal-picker',
-      componentType: ComponentType.StringSelect,
-      time: 60000,
-    });
+  const collector = message.createMessageComponentCollector({ max: 1, time: 60000 });
 
-    if (!goalInteraction) return;
-
-    const selected = goalInteraction.values[0];
+  collector.on('collect', async (i: any) => {
+    const selected = i.values[0];
 
     if (selected === '__new_goal__') {
-      await handleNewGoalThenEdit(goalInteraction, task, guildId);
+      await handleNewGoalThenEdit(i, task, guildId);
     } else {
       const newGoalId = selected === '__no_goal__' ? undefined : selected;
-      await showEditModal(goalInteraction, task, newGoalId);
+      await showEditModal(i, task, newGoalId);
     }
-  } catch (error) {
-    // Timeout
-  }
+  });
 }
 
 async function handleNewGoalThenEdit(interaction: any, task: any, guildId: string) {
@@ -150,7 +140,7 @@ async function handleNewGoalThenEdit(interaction: any, task: any, guildId: strin
     const goalName = goalModal.fields.getTextInputValue('goal-name');
 
     // Check for duplicate — use existing if found
-    const existing = await Goal.findOne({ guildId, name: goalName }).collation({ locale: 'en', strength: 2 });
+    const existing = await Goal.findOne({ guildId, name: goalName }).collation({ locale: 'en', strength: 2 }).lean();
     if (existing) {
       await showEditModal(goalModal, task, existing.goalId);
       return;
@@ -240,7 +230,8 @@ async function handleEditModalSubmit(interaction: ModalSubmitInteraction, task: 
           '❌ Invalid date/time format. Please use YYYY-MM-DD HH:mm (e.g., 2026-05-15 18:00)'
         ),
       ],
-      flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+      flags: [MessageFlags.IsComponentsV2],
+      ephemeral: true,
     });
     return;
   }
@@ -287,36 +278,27 @@ async function handleEditModalSubmit(interaction: ModalSubmitInteraction, task: 
     );
   }
 
-  await interaction.reply({
+  const message = await interaction.reply({
     components: [
       new TextDisplayBuilder().setContent(`# ✏️ Edit: ${title}`),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent(`${assigneeText}\n\nWould you like to change the assignee?`),
       new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons),
     ],
-    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
+    fetchReply: true,
   });
 
-  try {
-    const buttonInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (si: any) =>
-        si.user.id === interaction.user.id &&
-        si.customId.startsWith('edit-'),
-      componentType: ComponentType.Button,
-      time: 60000,
-    });
+  const collector = message.createMessageComponentCollector({ max: 1, time: 60000 });
 
-    if (!buttonInteraction) {
-      await saveTask(task, oldGoalId);
-      return;
-    }
-
-    if (buttonInteraction.customId === 'edit-change-assignee') {
-      await handleEditAssignee(buttonInteraction, task, oldGoalId);
-    } else if (buttonInteraction.customId === 'edit-remove-assignee') {
+  collector.on('collect', async (i: any) => {
+    if (i.customId === 'edit-change-assignee') {
+      await handleEditAssignee(i, task, oldGoalId);
+    } else if (i.customId === 'edit-remove-assignee') {
       task.assigneeId = null;
       await saveTask(task, oldGoalId);
-      await buttonInteraction.update({
+      await i.update({
         components: [
           new TextDisplayBuilder().setContent(`✅ Task **${task.taskId}** updated. Assignee removed.`),
         ],
@@ -324,16 +306,19 @@ async function handleEditModalSubmit(interaction: ModalSubmitInteraction, task: 
     } else {
       // Keep current assignee
       await saveTask(task, oldGoalId);
-      await buttonInteraction.update({
+      await i.update({
         components: [
           new TextDisplayBuilder().setContent(`✅ Task **${task.taskId}** updated.`),
         ],
       });
     }
-  } catch (error) {
-    // Timeout — save without assignee change
-    await saveTask(task, oldGoalId);
-  }
+  });
+
+  collector.on('end', async (collected: any) => {
+    if (collected.size === 0) {
+      await saveTask(task, oldGoalId);
+    }
+  });
 }
 
 async function handleEditAssignee(interaction: any, task: any, oldGoalId: string | null) {
@@ -343,42 +328,36 @@ async function handleEditAssignee(interaction: any, task: any, oldGoalId: string
     .setMinValues(1)
     .setMaxValues(1);
 
-  await interaction.update({
+  const message = await interaction.update({
     components: [
       new TextDisplayBuilder().setContent(`# ✏️ Edit: ${task.title}`),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent('Select a user to assign:'),
       new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(userSelect),
     ],
+    fetchReply: true,
   });
 
-  try {
-    const selectInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (si: any) =>
-        si.user.id === interaction.user.id &&
-        si.customId === 'edit-select-assignee',
-      componentType: ComponentType.UserSelect,
-      time: 60000,
-    });
+  const collector = message.createMessageComponentCollector({ max: 1, time: 60000 });
 
-    if (!selectInteraction) {
-      await saveTask(task, oldGoalId);
-      return;
-    }
-
-    task.assigneeId = selectInteraction.values[0];
+  collector.on('collect', async (i: any) => {
+    task.assigneeId = i.values[0];
     await saveTask(task, oldGoalId);
 
-    await selectInteraction.update({
+    await i.update({
       components: [
         new TextDisplayBuilder().setContent(
           `✅ Task **${task.taskId}** updated and assigned to <@${task.assigneeId}>.`
         ),
       ],
     });
-  } catch (error) {
-    await saveTask(task, oldGoalId);
-  }
+  });
+
+  collector.on('end', async (collected: any) => {
+    if (collected.size === 0) {
+      await saveTask(task, oldGoalId);
+    }
+  });
 }
 
 async function saveTask(task: any, oldGoalId: string | null) {

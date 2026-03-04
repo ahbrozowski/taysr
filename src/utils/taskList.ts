@@ -1,17 +1,13 @@
-import { Client, TextChannel, MessageFlags, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize } from 'discord.js';
+import { Client, TextChannel, MessageFlags, TextDisplayBuilder } from 'discord.js';
 import { ServerConfig, Task, Goal } from '../models';
 
 /**
- * Creates a compact TextDisplay component for a task
+ * Formats a single task as a one-line string
  */
-function createTaskDisplay(task: any): TextDisplayBuilder {
+function formatTaskLine(task: any): string {
   const assignee = task.assigneeId ? `<@${task.assigneeId}>` : 'Unassigned';
-  const dueDate = new Date(task.dueAt);
-  const timestamp = Math.floor(dueDate.getTime() / 1000);
-
-  const content = `**${task.taskId}** • ${task.title}\n${assignee} • <t:${timestamp}:R>`;
-
-  return new TextDisplayBuilder().setContent(content);
+  const timestamp = Math.floor(new Date(task.dueAt).getTime() / 1000);
+  return `**${task.title}** · ${assignee} · <t:${timestamp}:R>`;
 }
 
 /**
@@ -19,17 +15,14 @@ function createTaskDisplay(task: any): TextDisplayBuilder {
  * goals first (sorted by name), then uncategorized last.
  */
 async function groupTasksByGoal(tasks: any[], guildId: string): Promise<{ name: string; tasks: any[] }[]> {
-  // Collect unique goalIds
   const goalIds = [...new Set(tasks.filter(t => t.goalId).map(t => t.goalId))];
 
-  // Fetch goal names
   const goals = goalIds.length > 0
     ? await Goal.find({ goalId: { $in: goalIds }, guildId }).lean()
     : [];
 
   const goalMap = new Map(goals.map(g => [g.goalId, g.name]));
 
-  // Group tasks
   const grouped = new Map<string | null, any[]>();
   for (const task of tasks) {
     const key = task.goalId || null;
@@ -37,7 +30,6 @@ async function groupTasksByGoal(tasks: any[], guildId: string): Promise<{ name: 
     grouped.get(key)!.push(task);
   }
 
-  // Build ordered result: named goals first, uncategorized last
   const result: { name: string; tasks: any[] }[] = [];
 
   for (const [goalId, goalTasks] of grouped) {
@@ -47,10 +39,8 @@ async function groupTasksByGoal(tasks: any[], guildId: string): Promise<{ name: 
     }
   }
 
-  // Sort goal groups alphabetically
   result.sort((a, b) => a.name.localeCompare(b.name));
 
-  // Add uncategorized last
   const uncategorized = grouped.get(null);
   if (uncategorized) {
     result.push({ name: 'Uncategorized', tasks: uncategorized });
@@ -60,97 +50,62 @@ async function groupTasksByGoal(tasks: any[], guildId: string): Promise<{ name: 
 }
 
 /**
- * Builds the components array for the main task list (all tasks, grouped by goal)
+ * Builds a single TextDisplayBuilder containing the entire main task list
  */
 async function buildTaskListComponents(tasks: any[], guildId: string): Promise<any[]> {
-  const components = [];
   const commandName = process.env.DISCORD_COMMAND_PREFIX || 'taysr';
+  const lines: string[] = [];
 
-  // Header
-  components.push(
-    new TextDisplayBuilder().setContent('# 📋 Taysr Tasks\nOpen tasks for the team')
-  );
-
-  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large));
+  lines.push('# 📋 Taysr Tasks');
+  lines.push('Open tasks for the team');
+  lines.push('');
 
   if (tasks.length === 0) {
-    components.push(
-      new TextDisplayBuilder().setContent(`No open tasks. Use \`/${commandName}\` to create a new task!`)
-    );
+    lines.push(`No open tasks. Use \`/${commandName}\` to create a new task!`);
   } else {
     const groups = await groupTasksByGoal(tasks, guildId);
 
     for (const group of groups) {
-      // Goal heading
-      if (group.name === 'Uncategorized') {
-        components.push(new TextDisplayBuilder().setContent('## Uncategorized'));
-      } else {
-        components.push(new TextDisplayBuilder().setContent(`## 🎯 ${group.name}`));
-      }
+      const heading = group.name === 'Uncategorized' ? '## Uncategorized' : `## 🎯 ${group.name}`;
+      lines.push(heading);
 
       for (const task of group.tasks) {
-        components.push(createTaskDisplay(task));
-        components.push(new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small));
-
-        if (components.length >= 36) {
-          components.push(new TextDisplayBuilder().setContent('_...and more tasks. Some tasks are hidden due to message limits._'));
-          break;
-        }
+        lines.push(formatTaskLine(task));
       }
 
-      if (components.length >= 36) break;
+      lines.push('');
     }
   }
 
-  // Footer with how-to-use guide
-  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  components.push(
-    new TextDisplayBuilder().setContent(
-      `**How to use:** \`/${commandName}\` to get started\n` +
-      `_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`
-    )
-  );
+  lines.push(`**How to use:** \`/${commandName}\` to get started`);
+  lines.push(`_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`);
 
-  return components;
+  return [new TextDisplayBuilder().setContent(lines.join('\n'))];
 }
 
 /**
- * Builds the components array for a goal-specific pinned list
+ * Builds a single TextDisplayBuilder for a goal-specific pinned list
  */
 function buildGoalTaskListComponents(tasks: any[], goalName: string): any[] {
-  const components = [];
   const commandName = process.env.DISCORD_COMMAND_PREFIX || 'taysr';
+  const lines: string[] = [];
 
-  components.push(
-    new TextDisplayBuilder().setContent(`# 🎯 ${goalName}\nOpen tasks for this goal`)
-  );
-
-  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large));
+  lines.push(`# 🎯 ${goalName}`);
+  lines.push('Open tasks for this goal');
+  lines.push('');
 
   if (tasks.length === 0) {
-    components.push(
-      new TextDisplayBuilder().setContent(`No open tasks for this goal. Use \`/${commandName}\` to create a new task!`)
-    );
+    lines.push(`No open tasks for this goal. Use \`/${commandName}\` to create a new task!`);
   } else {
     for (const task of tasks) {
-      components.push(createTaskDisplay(task));
-      components.push(new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small));
-
-      if (components.length >= 36) {
-        components.push(new TextDisplayBuilder().setContent('_...and more tasks. Some tasks are hidden due to message limits._'));
-        break;
-      }
+      lines.push(formatTaskLine(task));
     }
   }
 
-  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-  components.push(
-    new TextDisplayBuilder().setContent(
-      `_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`
-    )
-  );
+  lines.push('');
+  lines.push(`_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`);
 
-  return components;
+  return [new TextDisplayBuilder().setContent(lines.join('\n'))];
 }
 
 /**
@@ -314,5 +269,16 @@ export async function refreshPinnedTaskList(client: Client, guildId: string): Pr
   } catch (error) {
     console.error('Error refreshing pinned task list:', error);
     throw error;
+  }
+}
+
+/**
+ * Refreshes all goal-specific pinned lists for a guild.
+ */
+export async function refreshAllGoalPinnedLists(client: Client, guildId: string): Promise<void> {
+  const goals = await Goal.find({ guildId, channelId: { $exists: true, $ne: null } }).lean();
+
+  for (const goal of goals) {
+    await updateGoalPinnedList(client, goal.goalId);
   }
 }

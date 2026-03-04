@@ -1,9 +1,9 @@
 import {
+  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChatInputCommandInteraction,
   ButtonInteraction,
-  ComponentType,
   MessageFlags,
   TextDisplayBuilder,
   SectionBuilder,
@@ -13,165 +13,159 @@ import {
 import { commandRegistry } from '../commands/registry';
 import { executeCommand } from '../commands/executor';
 
-const MAX_COMPONENTS = 35;
+interface PickerState {
+  page: number;
+}
+
+const COMMANDS_PER_PAGE = 8;
 const SELECTION_TIMEOUT = 60000;
 
-/**
- * Shows an interactive command picker UI
- */
-export async function showCommandPicker(
-  interaction: ChatInputCommandInteraction | ButtonInteraction
-): Promise<void> {
-  const implementedCommands = commandRegistry.getImplemented();
-  const plannedCommands = commandRegistry.getPlanned();
+function getDisplayCommands() {
+  const implemented = commandRegistry.getImplemented()
+    .filter((c) => c.metadata.name !== 'help' && c.metadata.emoji !== '📋');
+  const planned = commandRegistry.getPlanned();
+  return { implemented, planned, all: [...implemented, ...planned] };
+}
 
-  // Build Components V2 layout
-  const components = [];
+function render(state: PickerState) {
+  const { implemented, all } = getDisplayCommands();
+  const totalPages = Math.ceil(all.length / COMMANDS_PER_PAGE);
+  const start = state.page * COMMANDS_PER_PAGE;
+  const pageCommands = all.slice(start, start + COMMANDS_PER_PAGE);
+  const implementedCount = implemented.length;
 
-  // Header
-  components.push(
-    new TextDisplayBuilder().setContent('# 📋 Taysr Task Manager\nChoose a command:')
-  );
+  const components: any[] = [
+    new TextDisplayBuilder().setContent('# 📋 Taysr Task Manager\nChoose a command:'),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+  ];
 
-  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  let passedBoundary = false;
 
-  // Available Commands Section
-  for (const command of implementedCommands) {
-    // Skip the help/taysr command itself to avoid recursion
-    if (command.metadata.name === 'help' || command.metadata.emoji === '📋') {
-      continue;
+  for (let i = 0; i < pageCommands.length; i++) {
+    const command = pageCommands[i];
+    const globalIndex = start + i;
+
+    // Add "Coming Soon" header at the boundary between implemented and planned
+    if (!passedBoundary && globalIndex >= implementedCount) {
+      passedBoundary = true;
+      components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+      components.push(new TextDisplayBuilder().setContent('## 🚧 Coming Soon'));
     }
 
     components.push(
       new SectionBuilder()
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
-            `${command.metadata.emoji} **${command.metadata.description}**`
+            command.metadata.implemented
+              ? `${command.metadata.emoji} **${command.metadata.description}**`
+              : `${command.metadata.emoji} ${command.metadata.description}`
           )
         )
         .setButtonAccessory(
           new ButtonBuilder()
             .setCustomId(`cmd:${command.metadata.name}`)
-            .setLabel('Run')
-            .setStyle(ButtonStyle.Primary)
+            .setLabel(command.metadata.implemented ? 'Run' : 'Coming Soon')
+            .setStyle(command.metadata.implemented ? ButtonStyle.Primary : ButtonStyle.Secondary)
         )
     );
   }
 
-  // Only show planned section if there are planned commands
-  if (plannedCommands.length > 0) {
-    components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
-
-    // Coming Soon header
+  if (totalPages > 1) {
     components.push(
-      new TextDisplayBuilder().setContent('## 🚧 Coming Soon')
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('picker_prev')
+          .setLabel('Previous')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(state.page === 0),
+        new ButtonBuilder()
+          .setCustomId('picker_next')
+          .setLabel('Next')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(state.page >= totalPages - 1)
+      )
     );
-
-    // Planned Commands
-    for (const command of plannedCommands) {
-      components.push(
-        new SectionBuilder()
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              `${command.metadata.emoji} ${command.metadata.description}`
-            )
-          )
-          .setButtonAccessory(
-            new ButtonBuilder()
-              .setCustomId(`cmd:${command.metadata.name}`)
-              .setLabel('Coming Soon')
-              .setStyle(ButtonStyle.Secondary)
-          )
-      );
-
-      // Limit total components
-      if (components.length >= MAX_COMPONENTS) break;
-    }
   }
 
-  // Send the interactive picker
-  if (interaction instanceof ButtonInteraction) {
-    await interaction.update({
-      components: components,
-    });
-  } else {
-    await interaction.reply({
-      components: components,
-      flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
-    });
-  }
-
-  // Wait for button click
-  try {
-    const buttonInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (i) => i.user.id === interaction.user.id && i.customId.startsWith('cmd:'),
-      componentType: ComponentType.Button,
-      time: SELECTION_TIMEOUT,
-    }) as ButtonInteraction;
-
-    const commandName = buttonInteraction.customId.replace('cmd:', '');
-
-    // Use the executor to handle the command
-    await executeCommand(commandName, buttonInteraction);
-  } catch (error) {
-    // Timeout - show static info view
-    await showTimeoutView(interaction, implementedCommands, plannedCommands);
-  }
+  return components;
 }
 
-/**
- * Shows a static informational view when the selection times out
- */
-async function showTimeoutView(
-  interaction: ChatInputCommandInteraction | ButtonInteraction,
-  implementedCommands: ReturnType<typeof commandRegistry.getImplemented>,
-  plannedCommands: ReturnType<typeof commandRegistry.getPlanned>
+export async function showCommandPicker(
+  interaction: ChatInputCommandInteraction | ButtonInteraction
 ): Promise<void> {
-  const timeoutComponents = [
+  const state: PickerState = { page: 0 };
+
+  let message;
+  if (interaction instanceof ButtonInteraction) {
+    await interaction.update({ components: render(state) });
+    message = await interaction.fetchReply();
+  } else {
+    message = await interaction.reply({
+      components: render(state),
+      flags: [MessageFlags.IsComponentsV2],
+      ephemeral: true,
+      fetchReply: true,
+    });
+  }
+
+  const collector = message.createMessageComponentCollector({ time: SELECTION_TIMEOUT });
+
+  collector.on('collect', async (i: any) => {
+    if (i.customId === 'picker_prev') {
+      state.page = Math.max(0, state.page - 1);
+      await i.update({ components: render(state) });
+    } else if (i.customId === 'picker_next') {
+      state.page += 1;
+      await i.update({ components: render(state) });
+    } else if (i.customId.startsWith('cmd:')) {
+      const commandName = i.customId.replace('cmd:', '');
+      collector.stop();
+      // Delete the picker message so it doesn't linger as a dead UI
+      await interaction.deleteReply().catch(() => {});
+      await executeCommand(commandName, i);
+    }
+  });
+
+  collector.on('end', async (_collected: any, reason: string) => {
+    if (reason === 'time') {
+      await showTimeoutView(interaction);
+    }
+  });
+}
+
+async function showTimeoutView(
+  interaction: ChatInputCommandInteraction | ButtonInteraction
+): Promise<void> {
+  const { implemented, planned } = getDisplayCommands();
+
+  const components = [
     new TextDisplayBuilder().setContent('# 📋 Taysr Task Manager\n\n_Selection timed out._'),
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
   ];
 
-  // Build available commands section dynamically
   const availableLines = ['## ✅ Available Commands'];
-  for (const command of implementedCommands) {
-    if (command.metadata.name === 'help' || command.metadata.emoji === '📋') {
-      continue;
-    }
+  for (const command of implemented) {
     availableLines.push(
       `${command.metadata.emoji} **${command.metadata.description}** - Use \`/${command.metadata.name}\``
     );
   }
-  timeoutComponents.push(new TextDisplayBuilder().setContent(availableLines.join('\n')));
+  components.push(new TextDisplayBuilder().setContent(availableLines.join('\n')));
 
-  // Build coming soon section dynamically if there are planned commands
-  if (plannedCommands.length > 0) {
-    timeoutComponents.push(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
-    );
-
+  if (planned.length > 0) {
+    components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
     const plannedLines = ['## 🚧 Coming Soon'];
-    for (const command of plannedCommands) {
+    for (const command of planned) {
       plannedLines.push(`${command.metadata.emoji} ${command.metadata.description}`);
     }
-    timeoutComponents.push(new TextDisplayBuilder().setContent(plannedLines.join('\n')));
+    components.push(new TextDisplayBuilder().setContent(plannedLines.join('\n')));
   }
 
-  timeoutComponents.push(
-    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
-  );
-  timeoutComponents.push(
-    new TextDisplayBuilder().setContent(
-      '_Use slash commands to run commands directly._'
-    )
-  );
+  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  components.push(new TextDisplayBuilder().setContent('_Use slash commands to run commands directly._'));
 
   try {
-    await interaction.editReply({
-      components: timeoutComponents,
-    });
+    await interaction.editReply({ components });
   } catch {
     // Ignore if we can't edit
   }
 }
-

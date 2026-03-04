@@ -10,7 +10,6 @@ import {
   ChannelType,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType,
   MessageFlags,
   TextDisplayBuilder,
   SectionBuilder,
@@ -75,8 +74,8 @@ export const goalCommand: Command = {
       });
 
       await handleGoalModalSubmit(modalSubmit, interaction.guildId!);
-    } catch (error) {
-      console.log('Goal modal submission timed out or was cancelled');
+    } catch {
+      // Timeout — normal flow, no action needed
     }
   },
 };
@@ -86,13 +85,14 @@ async function handleGoalModalSubmit(interaction: ModalSubmitInteraction, guildI
   const description = interaction.fields.getTextInputValue('goal-description') || undefined;
 
   // Check for duplicate goal name
-  const existing = await Goal.findOne({ guildId, name }).collation({ locale: 'en', strength: 2 });
+  const existing = await Goal.findOne({ guildId, name }).collation({ locale: 'en', strength: 2 }).lean();
   if (existing) {
     await interaction.reply({
       components: [
         new TextDisplayBuilder().setContent(`❌ A goal named **${name}** already exists.`)
       ],
-      flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+      flags: [MessageFlags.IsComponentsV2],
+      ephemeral: true,
     });
     return;
   }
@@ -129,46 +129,40 @@ async function handleGoalModalSubmit(interaction: ModalSubmitInteraction, guildI
       ),
   ];
 
-  await interaction.reply({
+  const message = await interaction.reply({
     components,
-    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+    flags: [MessageFlags.IsComponentsV2],
+    ephemeral: true,
+    fetchReply: true,
   });
 
-  try {
-    const buttonInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (i) =>
-        i.user.id === interaction.user.id &&
-        (i.customId === `goal-link-channel:${goalId}` || i.customId === `goal-skip-channel:${goalId}`),
-      componentType: ComponentType.Button,
-      time: 60000,
-    }) as ButtonInteraction;
+  const goalData = { goalId, guildId, name, description };
 
-    if (buttonInteraction.customId.startsWith('goal-link-channel:')) {
-      await handleLinkChannel(buttonInteraction, { goalId, guildId, name, description });
+  const buttonCollector = message.createMessageComponentCollector({ max: 1, time: 60000 });
+
+  buttonCollector.on('collect', async (i: ButtonInteraction) => {
+    if (i.customId === `goal-link-channel:${goalId}`) {
+      await showChannelSelect(i, message, goalData, interaction);
     } else {
-      await createGoal({ goalId, guildId, name, description });
-      await buttonInteraction.update({
-        components: [
-          new TextDisplayBuilder().setContent(`# ✅ Goal Created`),
-          new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-          new TextDisplayBuilder().setContent(`Goal **${goalId}** — **${name}** has been created.`),
-        ],
+      await createGoal(goalData);
+      await i.update({
+        components: goalCreatedComponents(goalId, name),
       });
     }
-  } catch (error) {
-    // Timeout — create without channel link
-    await createGoal({ goalId, guildId, name, description });
-    await interaction.editReply({
-      components: [
-        new TextDisplayBuilder().setContent(`✅ Goal **${goalId}** — **${name}** created (no channel linked due to timeout).`)
-      ],
-    });
-  }
+  });
+
+  buttonCollector.on('end', async (collected: any) => {
+    if (collected.size === 0) {
+      await createGoalOnTimeout(goalData, interaction);
+    }
+  });
 }
 
-async function handleLinkChannel(
+async function showChannelSelect(
   interaction: ButtonInteraction,
-  goalData: { goalId: string; guildId: string; name: string; description?: string }
+  message: any,
+  goalData: { goalId: string; guildId: string; name: string; description?: string },
+  modalInteraction: ModalSubmitInteraction
 ) {
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId(`goal-channel-select:${goalData.goalId}`)
@@ -186,25 +180,17 @@ async function handleLinkChannel(
     ],
   });
 
-  try {
-    const selectInteraction = await interaction.channel?.awaitMessageComponent({
-      filter: (i) =>
-        i.user.id === interaction.user.id &&
-        i.customId === `goal-channel-select:${goalData.goalId}`,
-      componentType: ComponentType.ChannelSelect,
-      time: 60000,
-    });
+  const channelCollector = message.createMessageComponentCollector({ max: 1, time: 60000 });
 
-    if (!selectInteraction) return;
-
-    const channelId = selectInteraction.values[0];
+  channelCollector.on('collect', async (i: any) => {
+    const channelId = i.values[0];
     await createGoal({ ...goalData, channelId });
 
     // Create the goal-specific pinned list in the linked channel
     const client = getClient();
     await updateGoalPinnedList(client, goalData.goalId);
 
-    await selectInteraction.update({
+    await i.update({
       components: [
         new TextDisplayBuilder().setContent(`# ✅ Goal Created`),
         new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
@@ -214,15 +200,35 @@ async function handleLinkChannel(
         ),
       ],
     });
-  } catch (error) {
-    // Timeout — create without channel
-    await createGoal(goalData);
-    await interaction.editReply({
-      components: [
-        new TextDisplayBuilder().setContent(`✅ Goal **${goalData.goalId}** — **${goalData.name}** created (no channel linked due to timeout).`)
-      ],
-    });
-  }
+  });
+
+  channelCollector.on('end', async (collected: any) => {
+    if (collected.size === 0) {
+      await createGoalOnTimeout(goalData, modalInteraction);
+    }
+  });
+}
+
+function goalCreatedComponents(goalId: string, name: string) {
+  return [
+    new TextDisplayBuilder().setContent(`# ✅ Goal Created`),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    new TextDisplayBuilder().setContent(`Goal **${goalId}** — **${name}** has been created.`),
+  ];
+}
+
+async function createGoalOnTimeout(
+  goalData: { goalId: string; guildId: string; name: string; description?: string },
+  originalInteraction: ModalSubmitInteraction
+) {
+  await createGoal(goalData);
+  await originalInteraction.editReply({
+    components: [
+      new TextDisplayBuilder().setContent(
+        `✅ Goal **${goalData.goalId}** — **${goalData.name}** created (no channel linked due to timeout).`
+      ),
+    ],
+  });
 }
 
 async function createGoal(data: {

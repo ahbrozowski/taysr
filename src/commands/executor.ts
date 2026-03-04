@@ -30,14 +30,10 @@ async function showGuildRequiredError(
     new TextDisplayBuilder().setContent('❌ This command can only be used in a server.')
   ];
 
-  if (interaction instanceof ButtonInteraction) {
-    await interaction.update({ components });
-  } else {
-    await interaction.reply({
-      components,
-      flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
-    });
-  }
+  await interaction.reply({
+    components,
+    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+  });
 }
 
 /**
@@ -54,9 +50,7 @@ async function showExecutionError(
   ];
 
   try {
-    if (interaction instanceof ButtonInteraction) {
-      await interaction.update({ components });
-    } else if (interaction.replied || interaction.deferred) {
+    if (interaction.replied || interaction.deferred) {
       await interaction.followUp({
         components,
         flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
@@ -80,8 +74,9 @@ async function showConstructionMessage(
   commandName: string
 ): Promise<void> {
   const message = getConstructionMessage(`/${commandName}`);
-  await interaction.update({
+  await interaction.reply({
     components: [new TextDisplayBuilder().setContent(message)],
+    flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
   });
 }
 

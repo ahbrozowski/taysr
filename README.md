@@ -28,8 +28,7 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 | `/create` | ➕ | Create a new task - goal picker, modal form (title, due date/time, notes), assignee selection |
 | `/complete` | ✅ | Mark a task as complete - shows paginated list with filtering options |
 | `/goal` | 🎯 | Create a new goal with optional channel linking |
-| `/set-channel` | 📌 | Configure which channel displays the pinned task list |
-| `/set-goal-channel` | 🔗 | Link or unlink a goal to/from a channel for a focused task list |
+| `/set-channel` | 📌 | Set a channel for the task list or link a goal to a channel |
 | `/refresh` | 🔄 | Rebuild the pinned task list from database |
 | `/assign` | 👥 | Assign a task to a user via task picker and user select |
 | `/take` | ✋ | Self-assign an unassigned task |
@@ -177,7 +176,6 @@ taysr/
 │   │       ├── planned.ts       # Planned command definitions
 │   │       ├── refresh.ts
 │   │       ├── set-channel.ts
-│   │       ├── set-goal-channel.ts
 │   │       ├── take.ts
 │   │       ├── taysr.ts
 │   │       └── unassign.ts
