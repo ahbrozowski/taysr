@@ -4,27 +4,32 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 
 ## Features
 
+- **Goal System** - Organize tasks under goals/projects; goals can be linked to channels for focused pinned task lists
 - **Task Creation** - Create tasks with titles, due dates, notes, and optional assignees through interactive modal forms
+- **Goal Picker** - Select an existing goal, create a new one, or skip when creating tasks
 - **Task Completion** - Mark tasks complete with paginated selection lists and filtering by goal/assignee
-- **Pinned Task Lists** - Automatically-maintained pinned messages showing all active tasks with real-time updates
-- **Auto-Generated Task IDs** - Guild-scoped task IDs in T-001 format with atomic counter system
-- **Interactive UI** - Modern Discord Components (buttons, select menus, modals) for seamless interaction
-- **Guild Isolation** - Tasks and configurations are scoped per Discord server
+- **Pinned Task Lists** - Automatically-maintained pinned messages showing all active tasks grouped by goal
+- **Goal-Specific Channels** - Link goals to channels for focused pinned lists that auto-update
+- **Auto-Generated IDs** - Guild-scoped task IDs (T-001) and goal IDs (G-001) with atomic counters
+- **Interactive UI** - Modern Discord Components V2 (buttons, select menus, modals) for seamless interaction
+- **Guild Isolation** - Tasks, goals, and configurations are scoped per Discord server
 - **Task Assignment** - Assign tasks to specific users during creation
 - **Flexible Configuration** - Set which channel displays the pinned task list
 - **MongoDB Persistence** - Reliable database storage with Mongoose ORM
 
 ## Commands
 
-### Implemented Commands (6)
+### Implemented Commands (8)
 
 | Command | Icon | Description |
 |---------|------|-------------|
 | `/taysr` | 📋 | Main branded command - shows interactive command picker |
 | `/help` | ❓ | Display help information and command picker |
-| `/create` | ➕ | Create a new task with modal form (title, due date/time in YYYY-MM-DD HH:mm format, notes) |
+| `/create` | ➕ | Create a new task - goal picker, modal form (title, due date/time, notes), assignee selection |
 | `/complete` | ✅ | Mark a task as complete - shows paginated list with filtering options |
+| `/goal` | 🎯 | Create a new goal with optional channel linking |
 | `/set-channel` | 📌 | Configure which channel displays the pinned task list |
+| `/set-goal-channel` | 🔗 | Link or unlink a goal to/from a channel for a focused task list |
 | `/refresh` | 🔄 | Rebuild the pinned task list from database |
 
 ### Planned Commands (8)
@@ -162,10 +167,12 @@ taysr/
 │   │   └── definitions/         # Individual command implementations
 │   │       ├── complete.ts
 │   │       ├── create.ts
+│   │       ├── goal.ts
 │   │       ├── help.ts
 │   │       ├── planned.ts       # Planned command definitions
 │   │       ├── refresh.ts
 │   │       ├── set-channel.ts
+│   │       ├── set-goal-channel.ts
 │   │       └── taysr.ts
 │   ├── models/
 │   │   ├── index.ts             # MongoDB connection and initialization
@@ -220,7 +227,14 @@ The bot uses a modular command system with a central registry pattern:
 - `adminRoleIds` - Admin role configuration (planned)
 
 **Goal Model** ([src/models/Goal.ts](src/models/Goal.ts))
-- Infrastructure for task grouping (planned feature)
+- `goalId` - Human-readable ID (G-001, G-002, etc.)
+- `guildId` - Discord server ID for isolation
+- `name` - Goal name (unique per server, case-insensitive)
+- `description` - Optional goal description
+- `status` - Goal status (active, archived)
+- `channelId` - Optional linked channel for goal-specific pinned list
+- `messageId` - Pinned message ID in linked channel
+- `createdAt`, `updatedAt` - Timestamps
 
 **Reminder Model** ([src/models/Reminder.ts](src/models/Reminder.ts))
 - Infrastructure for task reminders (planned feature)
@@ -234,18 +248,19 @@ The bot leverages Discord Components V2 (Discord's modern UI framework) for rich
 - **Buttons** - Navigation controls (Previous/Next page)
 - **Ephemeral Responses** - Private messages visible only to the command user
 
-### Atomic Task ID Generation
+### Atomic ID Generation
 
-The [src/utils/taskId.ts](src/utils/taskId.ts) utility implements atomic counter-based ID generation using MongoDB's `findOneAndUpdate` with proper locking to prevent race conditions when multiple tasks are created simultaneously.
+The [src/utils/taskId.ts](src/utils/taskId.ts) utility implements atomic counter-based ID generation using MongoDB's `findOneAndUpdate` with proper locking to prevent race conditions. Generates both task IDs (T-001) and goal IDs (G-001).
 
 ### Pinned Task List Management
 
 The pinned task list automatically updates when:
 - New tasks are created
 - Tasks are marked complete
+- Goals are linked/unlinked from channels
 - The `/refresh` command is executed
 
-The list is stored as a pinned message in the configured channel and displays all active tasks with their IDs, titles, assignees, and due dates.
+The main list is stored as a pinned message in the configured channel, grouped by goal with "Uncategorized" last. Goals can also have their own pinned lists in linked channels, showing only tasks for that goal.
 
 ## Development
 
@@ -341,7 +356,6 @@ When modifying Mongoose models:
 - **Advanced Listing** - `/list` command with filtering and sorting
 - **Timezone Support** - Server-specific timezone configuration
 - **Task Reminders** - Automated reminders for upcoming due dates
-- **Goal Management** - Create and manage goals for task organization
 - **Recurring Tasks** - Support for repeating tasks
 - **Task Templates** - Pre-defined task templates
 - **Analytics** - Task completion statistics and reports
