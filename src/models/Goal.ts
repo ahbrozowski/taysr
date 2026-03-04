@@ -6,6 +6,8 @@ export interface IGoal extends Document {
   name: string;
   description?: string;
   status: 'active' | 'archived';
+  channelId?: string;
+  messageId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,6 +18,8 @@ const goalSchema = new Schema<IGoal>({
   name: { type: String, required: true },
   description: { type: String, default: null },
   status: { type: String, enum: ['active', 'archived'], default: 'active' },
+  channelId: { type: String, default: null },
+  messageId: { type: String, default: null },
 }, {
   timestamps: true,
 });

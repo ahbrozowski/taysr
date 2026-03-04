@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 
 import { Goal, Task } from '../models';
-import { updatePinnedTaskList } from './taskList';
+import { updatePinnedTaskList, updateGoalPinnedList } from './taskList';
 
 interface TaskSelectorState {
   page: number;
@@ -141,6 +141,11 @@ export async function taskStateReducer(interaction: any, state:TaskSelectorState
       updatePinnedTaskList(interaction.client, interaction.guildId).catch(err => {
         console.error('Failed to update pinned task list:', err);
       });
+      if (task.goalId) {
+        updateGoalPinnedList(interaction.client, task.goalId).catch(err => {
+          console.error('Failed to update goal pinned list:', err);
+        });
+      }
     }
   }
 

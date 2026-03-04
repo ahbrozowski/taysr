@@ -1,17 +1,17 @@
 import mongoose from 'mongoose';
 
-// Counter schema for atomic task ID generation
-interface ITaskCounter {
-  _id: string; // guildId
+// Counter schema for atomic ID generation (tasks and goals)
+interface ICounter {
+  _id: string; // e.g. "guild:task" or "guild:goal"
   sequence: number;
 }
 
-const taskCounterSchema = new mongoose.Schema<ITaskCounter>({
-  _id: { type: String, required: true }, // guildId
+const counterSchema = new mongoose.Schema<ICounter>({
+  _id: { type: String, required: true },
   sequence: { type: Number, default: 0 },
 });
 
-const TaskCounter = mongoose.model<ITaskCounter>('TaskCounter', taskCounterSchema);
+const Counter = mongoose.model<ICounter>('Counter', counterSchema);
 
 /**
  * Generates a unique task ID like T-001, T-002, etc. using atomic MongoDB counter.
@@ -22,8 +22,8 @@ const TaskCounter = mongoose.model<ITaskCounter>('TaskCounter', taskCounterSchem
  */
 export async function generateTaskId(guildId: string): Promise<string> {
   // Atomically increment the counter for this guild
-  const counter = await TaskCounter.findOneAndUpdate(
-    { _id: guildId },
+  const counter = await Counter.findOneAndUpdate(
+    { _id: `${guildId}:task` },
     { $inc: { sequence: 1 } },
     {
       new: true, // Return the updated document
@@ -38,3 +38,22 @@ export async function generateTaskId(guildId: string): Promise<string> {
   // padStart only pads if needed, so T-1000 and beyond work fine
   return `T-${nextNumber.toString().padStart(3, '0')}`;
 }
+
+/**
+ * Generates a unique goal ID like G-001, G-002, etc. using atomic MongoDB counter.
+ */
+export async function generateGoalId(guildId: string): Promise<string> {
+  const counter = await Counter.findOneAndUpdate(
+    { _id: `${guildId}:goal` },
+    { $inc: { sequence: 1 } },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true
+    }
+  );
+
+  const nextNumber = counter.sequence;
+  return `G-${nextNumber.toString().padStart(3, '0')}`;
+}
+

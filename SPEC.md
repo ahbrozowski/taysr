@@ -208,8 +208,34 @@
 - Component flow:
   - Modal text input for cadence.
 
+### /taysr goal
+- Inputs:
+  - name (required)
+  - description (optional)
+  - channel (optional)
+- Behavior:
+  - Creates a new goal.
+  - Optionally links it to a channel for a goal-specific pinned task list.
+  - If a channel is linked, creates a pinned message there showing only tasks for that goal.
+- Component flow:
+  - Step 1: Modal with goal name and description.
+  - Step 2: "Link Channel" button or "Skip" button.
+  - Step 3 (if linking): Channel Select to pick the channel.
+
+### /taysr set-goal-channel
+- Inputs:
+  - goal (required)
+  - channel (optional)
+- Behavior:
+  - Links or unlinks a goal to/from a channel.
+  - When linked, the channel gets a pinned message showing only tasks for that goal, updated on every task change.
+  - When unlinking, deletes the old pinned message.
+- Component flow:
+  - Step 1: Goal picker (String Select of active goals).
+  - Step 2: Channel Select to pick a channel, or "Unlink" button if currently linked.
+
 ## Task list behavior
-- Single pinned message in the configured channel.
+- Single pinned message in the configured channel (main task list).
 - Updated on every task change.
 - Shows only open tasks (including unassigned).
 - Grouped by goal name, with "Uncategorized" last.
@@ -221,6 +247,12 @@
   - Due date/time (server timezone)
   - Optional notes or short summary
 - The pinned message also includes a short "How to use" guide with a `/taysr help` example.
+
+### Goal-specific pinned lists
+- Goals can optionally be linked to a specific channel via `/taysr goal` or `/taysr set-goal-channel`.
+- When linked, the channel gets its own pinned message showing only open tasks for that goal.
+- Goal-specific pinned lists are updated alongside the main list on every task change affecting that goal.
+- Unlinking a goal from a channel deletes the goal's pinned message from that channel.
 
 ## Example usage (real-life scenario)
 Mae (team manager) sets the list channel so everyone knows where tasks live. She runs this in `#ops-tasks`:
@@ -297,6 +329,8 @@ Notes: Confirm with coaches before posting
 - name (string, unique per server, case-insensitive)
 - description (string, optional)
 - status (enum: active, archived)
+- channel_id (string, nullable; linked channel for goal-specific pinned list)
+- message_id (string, nullable; pinned message ID in linked channel)
 - created_at (timestamp)
 - updated_at (timestamp)
 

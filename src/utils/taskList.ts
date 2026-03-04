@@ -1,5 +1,5 @@
 import { Client, TextChannel, MessageFlags, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize } from 'discord.js';
-import { ServerConfig, Task } from '../models';
+import { ServerConfig, Task, Goal } from '../models';
 
 /**
  * Creates a compact TextDisplay component for a task
@@ -9,19 +9,61 @@ function createTaskDisplay(task: any): TextDisplayBuilder {
   const dueDate = new Date(task.dueAt);
   const timestamp = Math.floor(dueDate.getTime() / 1000);
 
-  // Compact format: taskId • title • assignee • due date (no notes in list view)
   const content = `**${task.taskId}** • ${task.title}\n${assignee} • <t:${timestamp}:R>`;
 
   return new TextDisplayBuilder().setContent(content);
 }
 
 /**
- * Builds the components array for the task list
+ * Groups tasks by goalId and returns them in order:
+ * goals first (sorted by name), then uncategorized last.
  */
-function buildTaskListComponents(tasks: any[]): any[] {
-  const components = [];
+async function groupTasksByGoal(tasks: any[], guildId: string): Promise<{ name: string; tasks: any[] }[]> {
+  // Collect unique goalIds
+  const goalIds = [...new Set(tasks.filter(t => t.goalId).map(t => t.goalId))];
 
-  // Get command name from environment or use default
+  // Fetch goal names
+  const goals = goalIds.length > 0
+    ? await Goal.find({ goalId: { $in: goalIds }, guildId }).lean()
+    : [];
+
+  const goalMap = new Map(goals.map(g => [g.goalId, g.name]));
+
+  // Group tasks
+  const grouped = new Map<string | null, any[]>();
+  for (const task of tasks) {
+    const key = task.goalId || null;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(task);
+  }
+
+  // Build ordered result: named goals first, uncategorized last
+  const result: { name: string; tasks: any[] }[] = [];
+
+  for (const [goalId, goalTasks] of grouped) {
+    if (goalId) {
+      const goalName = goalMap.get(goalId) || goalId;
+      result.push({ name: goalName, tasks: goalTasks });
+    }
+  }
+
+  // Sort goal groups alphabetically
+  result.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Add uncategorized last
+  const uncategorized = grouped.get(null);
+  if (uncategorized) {
+    result.push({ name: 'Uncategorized', tasks: uncategorized });
+  }
+
+  return result;
+}
+
+/**
+ * Builds the components array for the main task list (all tasks, grouped by goal)
+ */
+async function buildTaskListComponents(tasks: any[], guildId: string): Promise<any[]> {
+  const components = [];
   const commandName = process.env.DISCORD_COMMAND_PREFIX || 'taysr';
 
   // Header
@@ -33,37 +75,125 @@ function buildTaskListComponents(tasks: any[]): any[] {
 
   if (tasks.length === 0) {
     components.push(
-      new TextDisplayBuilder().setContent(`No open tasks. Use \`/${commandName} create\` to create a new task!`)
+      new TextDisplayBuilder().setContent(`No open tasks. Use \`/${commandName}\` to create a new task!`)
     );
   } else {
-    // Add each task as a text display with separator
-    for (const task of tasks) {
-      components.push(createTaskDisplay(task));
-      components.push(new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+    const groups = await groupTasksByGoal(tasks, guildId);
 
-      // Respect Discord's 40 component limit
-      if (components.length >= 38) {
-        components.push(new TextDisplayBuilder().setContent('_...and more tasks. Some tasks are hidden due to message limits._'));
-        break;
+    for (const group of groups) {
+      // Goal heading
+      if (group.name === 'Uncategorized') {
+        components.push(new TextDisplayBuilder().setContent('## Uncategorized'));
+      } else {
+        components.push(new TextDisplayBuilder().setContent(`## 🎯 ${group.name}`));
       }
+
+      for (const task of group.tasks) {
+        components.push(createTaskDisplay(task));
+        components.push(new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+
+        if (components.length >= 36) {
+          components.push(new TextDisplayBuilder().setContent('_...and more tasks. Some tasks are hidden due to message limits._'));
+          break;
+        }
+      }
+
+      if (components.length >= 36) break;
     }
   }
 
-  // Footer
+  // Footer with how-to-use guide
   components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   components.push(
-    new TextDisplayBuilder().setContent(`_Last updated: <t:${Math.floor(Date.now() / 1000)}:R> • Use \`/${commandName} help\` for more information_`)
+    new TextDisplayBuilder().setContent(
+      `**How to use:** \`/${commandName}\` to get started\n` +
+      `_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`
+    )
   );
 
   return components;
 }
 
 /**
- * Updates or creates the pinned task list message
+ * Builds the components array for a goal-specific pinned list
+ */
+function buildGoalTaskListComponents(tasks: any[], goalName: string): any[] {
+  const components = [];
+  const commandName = process.env.DISCORD_COMMAND_PREFIX || 'taysr';
+
+  components.push(
+    new TextDisplayBuilder().setContent(`# 🎯 ${goalName}\nOpen tasks for this goal`)
+  );
+
+  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Large));
+
+  if (tasks.length === 0) {
+    components.push(
+      new TextDisplayBuilder().setContent(`No open tasks for this goal. Use \`/${commandName}\` to create a new task!`)
+    );
+  } else {
+    for (const task of tasks) {
+      components.push(createTaskDisplay(task));
+      components.push(new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small));
+
+      if (components.length >= 36) {
+        components.push(new TextDisplayBuilder().setContent('_...and more tasks. Some tasks are hidden due to message limits._'));
+        break;
+      }
+    }
+  }
+
+  components.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+  components.push(
+    new TextDisplayBuilder().setContent(
+      `_Last updated: <t:${Math.floor(Date.now() / 1000)}:R>_`
+    )
+  );
+
+  return components;
+}
+
+/**
+ * Sends or edits a pinned message in a channel.
+ * Returns the message ID of the pinned message.
+ */
+async function upsertPinnedMessage(
+  channel: TextChannel,
+  existingMessageId: string | undefined,
+  components: any[]
+): Promise<string> {
+  // Try to edit existing message
+  if (existingMessageId) {
+    try {
+      const message = await channel.messages.fetch(existingMessageId);
+      await message.edit({ components });
+      return message.id;
+    } catch (error) {
+      console.log('Could not edit existing message, will create new one');
+    }
+  }
+
+  // Create new message
+  const message = await channel.send({
+    components,
+    flags: [MessageFlags.IsComponentsV2],
+    allowedMentions: { parse: [] },
+  });
+
+  try {
+    await message.pin();
+  } catch (error) {
+    console.error('Failed to pin message:', error);
+  }
+
+  return message.id;
+}
+
+/**
+ * Updates or creates the main pinned task list message (all tasks, grouped by goal)
  */
 export async function updatePinnedTaskList(client: Client, guildId: string): Promise<void> {
   try {
-    // Get server config
     const config = await ServerConfig.findOne({ guildId });
 
     if (!config || !config.taskListChannelId) {
@@ -71,56 +201,21 @@ export async function updatePinnedTaskList(client: Client, guildId: string): Pro
       return;
     }
 
-    // Get the channel
     const channel = await client.channels.fetch(config.taskListChannelId);
     if (!channel || !channel.isTextBased() || !(channel instanceof TextChannel)) {
       console.error(`Channel ${config.taskListChannelId} is not a text channel`);
       return;
     }
 
-    // Get all open tasks for this guild
-    const tasks = await Task.find({
-      guildId,
-      status: 'open'
-    })
-      .sort({ dueAt: 1 }) // Sort by due date ascending
+    const tasks = await Task.find({ guildId, status: 'open' })
+      .sort({ dueAt: 1 })
       .lean();
 
-    // Build the components
-    const components = buildTaskListComponents(tasks);
+    const components = await buildTaskListComponents(tasks, guildId);
+    const messageId = await upsertPinnedMessage(channel, config.taskListMessageId, components);
 
-    let message = null;
-
-    // Try to fetch and edit existing message
-    if (config.taskListMessageId) {
-      try {
-        message = await channel.messages.fetch(config.taskListMessageId);
-        await message.edit({ components: components });
-        console.log('✅ Updated existing task list');
-      } catch (error) {
-        console.log('Could not edit existing message, will create new one');
-        message = null;
-      }
-    }
-
-    // Create new message if editing failed or no message existed
-    if (!message) {
-      message = await channel.send({
-        components: components,
-        flags: [MessageFlags.IsComponentsV2],
-        allowedMentions: { parse: [] } // Don't ping anyone
-      });
-
-      // Pin the new message
-      try {
-        await message.pin();
-        console.log('✅ Created and pinned new task list');
-      } catch (error) {
-        console.error('Failed to pin message:', error);
-      }
-
-      // Save the new message ID
-      config.taskListMessageId = message.id;
+    if (messageId !== config.taskListMessageId) {
+      config.taskListMessageId = messageId;
       await config.save();
     }
 
@@ -132,13 +227,45 @@ export async function updatePinnedTaskList(client: Client, guildId: string): Pro
 }
 
 /**
+ * Updates or creates a goal-specific pinned task list in the goal's linked channel.
+ * Only does anything if the goal has a channelId set.
+ */
+export async function updateGoalPinnedList(client: Client, goalId: string): Promise<void> {
+  try {
+    const goal = await Goal.findOne({ goalId });
+    if (!goal || !goal.channelId) return;
+
+    const channel = await client.channels.fetch(goal.channelId);
+    if (!channel || !channel.isTextBased() || !(channel instanceof TextChannel)) {
+      console.error(`Goal channel ${goal.channelId} is not a text channel`);
+      return;
+    }
+
+    const tasks = await Task.find({ goalId, status: 'open' })
+      .sort({ dueAt: 1 })
+      .lean();
+
+    const components = buildGoalTaskListComponents(tasks, goal.name);
+    const messageId = await upsertPinnedMessage(channel, goal.messageId, components);
+
+    if (messageId !== goal.messageId) {
+      goal.messageId = messageId;
+      await goal.save();
+    }
+
+    console.log(`✅ Updated goal task list for ${goal.name} (${goalId})`);
+  } catch (error) {
+    console.error(`Error updating goal pinned list for ${goalId}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Completely rebuilds the pinned task list from scratch.
  * Deletes the old message and creates a new one.
- * Use this when the old message is corrupted or in the wrong format.
  */
 export async function refreshPinnedTaskList(client: Client, guildId: string): Promise<void> {
   try {
-    // Get server config
     const config = await ServerConfig.findOne({ guildId });
 
     if (!config || !config.taskListChannelId) {
@@ -146,51 +273,40 @@ export async function refreshPinnedTaskList(client: Client, guildId: string): Pr
       return;
     }
 
-    // Get the channel
     const channel = await client.channels.fetch(config.taskListChannelId);
     if (!channel || !channel.isTextBased() || !(channel instanceof TextChannel)) {
       console.error(`Channel ${config.taskListChannelId} is not a text channel`);
       return;
     }
 
-    // Delete old message if it exists
+    // Delete old message
     if (config.taskListMessageId) {
       try {
         const oldMessage = await channel.messages.fetch(config.taskListMessageId);
         await oldMessage.delete();
-        console.log('🗑️ Deleted old task list message');
       } catch (error) {
         console.log('Could not delete old message:', error);
       }
     }
 
-    // Get all open tasks
-    const tasks = await Task.find({
-      guildId,
-      status: 'open'
-    })
+    const tasks = await Task.find({ guildId, status: 'open' })
       .sort({ dueAt: 1 })
       .lean();
 
-    // Build the components
-    const components = buildTaskListComponents(tasks);
+    const components = await buildTaskListComponents(tasks, guildId);
 
-    // Create new message
     const message = await channel.send({
-      components: components,
+      components,
       flags: [MessageFlags.IsComponentsV2],
-      allowedMentions: { parse: [] } // Don't ping anyone
+      allowedMentions: { parse: [] },
     });
 
-    // Pin the new message
     try {
       await message.pin();
-      console.log('📌 Created and pinned new task list');
     } catch (error) {
       console.error('Failed to pin message:', error);
     }
 
-    // Save the new message ID
     config.taskListMessageId = message.id;
     await config.save();
 

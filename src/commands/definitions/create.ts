@@ -11,6 +11,8 @@ import {
   ButtonInteraction,
   UserSelectMenuBuilder,
   UserSelectMenuInteraction,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   ComponentType,
   MessageFlags,
   TextDisplayBuilder,
@@ -19,9 +21,9 @@ import {
   SeparatorSpacingSize,
 } from 'discord.js';
 import { Command } from '../registry';
-import { Task } from '../../models';
-import { generateTaskId } from '../../utils/taskId';
-import { updatePinnedTaskList } from '../../utils/taskList';
+import { Goal, Task } from '../../models';
+import { generateTaskId, generateGoalId } from '../../utils/taskId';
+import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
 
 /**
@@ -30,6 +32,7 @@ import { getClient } from '../../utils/client';
 interface TaskCreationData {
   taskId: string;
   guildId: string;
+  goalId?: string;
   title: string;
   dueAt: Date;
   notes?: string;
@@ -54,94 +57,259 @@ export const createCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
-    // Create and show modal
-    const modal = new ModalBuilder()
-      .setCustomId('create-task-modal')
-      .setTitle('Create New Task');
+    const guildId = interaction.guildId!;
+    const goals = await Goal.find({ guildId, status: 'active' }).lean();
 
-    const titleInput = new TextInputBuilder()
-      .setCustomId('task-title')
-      .setLabel('Task Title')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g., Design bout flyer')
-      .setRequired(true)
-      .setMaxLength(100);
+    // If there are goals, show goal picker first
+    if (goals.length > 0) {
+      const goalSelect = new StringSelectMenuBuilder()
+        .setCustomId('create-goal-picker')
+        .setPlaceholder('Select a goal for this task');
 
-    const datetimeInput = new TextInputBuilder()
-      .setCustomId('task-datetime')
-      .setLabel('Due Date & Time (YYYY-MM-DD HH:mm)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('2025-02-15 18:00')
-      .setRequired(true);
+      for (const goal of goals) {
+        goalSelect.addOptions(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(goal.name)
+            .setValue(goal.goalId)
+            .setDescription(goal.goalId)
+        );
+      }
+      goalSelect.addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel('New goal...')
+          .setValue('__new_goal__')
+          .setDescription('Create a new goal'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('No goal')
+          .setValue('__no_goal__')
+          .setDescription('Task without a goal')
+      );
 
-    const notesInput = new TextInputBuilder()
-      .setCustomId('task-notes')
-      .setLabel('Notes (optional)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Additional details or context')
-      .setRequired(false)
-      .setMaxLength(500);
+      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(goalSelect);
 
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(datetimeInput),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(notesInput)
-    );
+      const components = [
+        new TextDisplayBuilder().setContent('# ➕ Create Task'),
+        new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+        new TextDisplayBuilder().setContent('Select a goal for this task:'),
+        row,
+      ];
 
-    await interaction.showModal(modal);
+      if (interaction instanceof ButtonInteraction) {
+        await interaction.update({ components });
+      } else {
+        await interaction.reply({
+          components,
+          flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
+        });
+      }
 
-    // Wait for modal submission
-    try {
-      const modalSubmit = await interaction.awaitModalSubmit({
-        filter: (i: ModalSubmitInteraction) =>
-          i.customId === 'create-task-modal' && i.user.id === interaction.user.id,
-        time: 300000, // 5 minutes
-      });
+      try {
+        const goalInteraction = await interaction.channel?.awaitMessageComponent({
+          filter: (i) =>
+            i.user.id === interaction.user.id &&
+            i.customId === 'create-goal-picker',
+          componentType: ComponentType.StringSelect,
+          time: 60000,
+        });
 
-      await handleModalSubmit(modalSubmit, interaction.guildId!);
-    } catch (error) {
-      // Modal submission timed out or was cancelled
-      // handleModalSubmit handles its own timeouts, so this is only for modal submission itself
-      console.log('Modal submission timed out or was cancelled');
+        if (!goalInteraction) return;
+
+        const selected = goalInteraction.values[0];
+
+        if (selected === '__new_goal__') {
+          // Show modal for new goal name, then task modal
+          await handleNewGoalThenTask(goalInteraction, guildId);
+        } else {
+          const goalId = selected === '__no_goal__' ? undefined : selected;
+          await showTaskModal(goalInteraction, guildId, goalId);
+        }
+      } catch (error) {
+        // Timeout
+      }
+    } else {
+      // No goals exist — go straight to task modal (with option to create goal inline)
+      await showTaskModalDirect(interaction, guildId);
     }
   },
 };
 
-async function handleModalSubmit(interaction: ModalSubmitInteraction, guildId: string) {
+/**
+ * Shows a modal to create a new goal, then continues to the task modal.
+ */
+async function handleNewGoalThenTask(interaction: any, guildId: string) {
+  const modal = new ModalBuilder()
+    .setCustomId('create-inline-goal-modal')
+    .setTitle('New Goal');
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId('goal-name')
+    .setLabel('Goal Name')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g., Prepare marketing for this tournament')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput)
+  );
+
+  await interaction.showModal(modal);
+
+  try {
+    const goalModal = await interaction.awaitModalSubmit({
+      filter: (i: ModalSubmitInteraction) =>
+        i.customId === 'create-inline-goal-modal' && i.user.id === interaction.user.id,
+      time: 300000,
+    });
+
+    const goalName = goalModal.fields.getTextInputValue('goal-name');
+
+    // Check for duplicate
+    const existing = await Goal.findOne({ guildId, name: goalName }).collation({ locale: 'en', strength: 2 });
+    if (existing) {
+      // Use existing goal instead of failing
+      await showTaskModal(goalModal, guildId, existing.goalId);
+      return;
+    }
+
+    const goalId = await generateGoalId(guildId);
+    await Goal.create({ goalId, guildId, name: goalName, status: 'active' });
+
+    await showTaskModal(goalModal, guildId, goalId);
+  } catch (error) {
+    console.log('Inline goal modal timed out or was cancelled');
+  }
+}
+
+/**
+ * Shows the task creation modal. Called after goal selection.
+ */
+async function showTaskModal(interaction: any, guildId: string, goalId?: string) {
+  const modal = new ModalBuilder()
+    .setCustomId('create-task-modal')
+    .setTitle('Create New Task');
+
+  const titleInput = new TextInputBuilder()
+    .setCustomId('task-title')
+    .setLabel('Task Title')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g., Design bout flyer')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  const datetimeInput = new TextInputBuilder()
+    .setCustomId('task-datetime')
+    .setLabel('Due Date & Time (YYYY-MM-DD HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('2026-05-15 18:00')
+    .setRequired(true);
+
+  const notesInput = new TextInputBuilder()
+    .setCustomId('task-notes')
+    .setLabel('Notes (optional)')
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder('Additional details or context')
+    .setRequired(false)
+    .setMaxLength(500);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(datetimeInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(notesInput)
+  );
+
+  await interaction.showModal(modal);
+
+  try {
+    const modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i: ModalSubmitInteraction) =>
+        i.customId === 'create-task-modal' && i.user.id === interaction.user.id,
+      time: 300000,
+    });
+
+    await handleTaskModalSubmit(modalSubmit, guildId, goalId);
+  } catch (error) {
+    console.log('Task modal submission timed out or was cancelled');
+  }
+}
+
+/**
+ * Shortcut when no goals exist — goes straight to modal without goal picker.
+ */
+async function showTaskModalDirect(interaction: ChatInputCommandInteraction | ButtonInteraction, guildId: string) {
+  const modal = new ModalBuilder()
+    .setCustomId('create-task-modal')
+    .setTitle('Create New Task');
+
+  const titleInput = new TextInputBuilder()
+    .setCustomId('task-title')
+    .setLabel('Task Title')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('e.g., Design bout flyer')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  const datetimeInput = new TextInputBuilder()
+    .setCustomId('task-datetime')
+    .setLabel('Due Date & Time (YYYY-MM-DD HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('2026-05-15 18:00')
+    .setRequired(true);
+
+  const notesInput = new TextInputBuilder()
+    .setCustomId('task-notes')
+    .setLabel('Notes (optional)')
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder('Additional details or context')
+    .setRequired(false)
+    .setMaxLength(500);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(datetimeInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(notesInput)
+  );
+
+  await interaction.showModal(modal);
+
+  try {
+    const modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i: ModalSubmitInteraction) =>
+        i.customId === 'create-task-modal' && i.user.id === interaction.user.id,
+      time: 300000,
+    });
+
+    await handleTaskModalSubmit(modalSubmit, guildId);
+  } catch (error) {
+    console.log('Task modal submission timed out or was cancelled');
+  }
+}
+
+async function handleTaskModalSubmit(interaction: ModalSubmitInteraction, guildId: string, goalId?: string) {
   if (!guildId) return;
 
   const title = interaction.fields.getTextInputValue('task-title');
   const datetimeStr = interaction.fields.getTextInputValue('task-datetime');
   const notes = interaction.fields.getTextInputValue('task-notes') || undefined;
 
-  console.log('[CREATE] Modal data received:', {
-    title,
-    datetimeStr,
-    notes: notes || '(none)',
-    guildId,
-    userId: interaction.user.id
-  });
-
   // Parse and validate datetime
   const dueDate = parseDateTime(datetimeStr);
-  console.log('[CREATE] Parsed date:', dueDate);
   if (!dueDate) {
     await interaction.reply({
       components: [
-        new TextDisplayBuilder().setContent('❌ Invalid date/time. Please use YYYY-MM-DD HH:mm format with a future date (e.g., 2026-02-15 18:00)')
+        new TextDisplayBuilder().setContent('❌ Invalid date/time. Please use YYYY-MM-DD HH:mm format with a future date (e.g., 2026-05-15 18:00)')
       ],
       flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
     });
     return;
   }
 
-  // Generate task ID
   const taskId = await generateTaskId(guildId);
 
-  // Store task data temporarily (we'll create it after assignment decision)
-  const taskData = {
+  const taskData: TaskCreationData = {
     taskId,
     guildId,
+    goalId,
     title,
     dueAt: dueDate,
     notes,
@@ -149,7 +317,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction, guildId: s
     status: 'open' as const,
   };
 
-  // Show assignment options with Components V2
+  // Show assignment options
   const components = [
     new TextDisplayBuilder().setContent(`# Task Created: ${title}`),
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
@@ -179,11 +347,10 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction, guildId: s
   ];
 
   await interaction.reply({
-    components: components,
+    components,
     flags: [MessageFlags.IsComponentsV2, MessageFlags.Ephemeral],
   });
 
-  // Wait for button interaction
   try {
     const buttonInteraction = await interaction.channel?.awaitMessageComponent({
       filter: (i) =>
@@ -199,7 +366,6 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction, guildId: s
       await handleLeaveUnassigned(buttonInteraction, taskData);
     }
   } catch (error) {
-    // Timeout - create unassigned task anyway
     await createTask(taskData, guildId);
     await interaction.editReply({
       components: [
@@ -291,7 +457,12 @@ async function createTask(taskData: TaskCreationData, guildId: string) {
     // Update the pinned task list
     const client = getClient();
     await updatePinnedTaskList(client, guildId);
-    console.log('[CREATE] Pinned task list updated');
+
+    // Update goal-specific pinned list if task belongs to a goal
+    if (taskData.goalId) {
+      await updateGoalPinnedList(client, taskData.goalId);
+    }
+    console.log('[CREATE] Pinned task list(s) updated');
   } catch (error: any) {
     console.error('[CREATE] ERROR creating task:');
     console.error('  Error name:', error.name);
