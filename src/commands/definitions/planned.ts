@@ -15,17 +15,6 @@ const notImplementedExecute = async () => {
 export const plannedCommands: Command[] = [
   {
     metadata: {
-      name: 'set-reminders',
-      emoji: '⏰',
-      description: 'Configure reminders',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('set-reminders').setDescription('Configure task reminders'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'bug-report',
       emoji: '🐛',
       description: 'Report a bug',
