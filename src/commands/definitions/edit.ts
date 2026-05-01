@@ -24,6 +24,7 @@ import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
 import { scheduleRemindersForTask } from '../../utils/reminders';
+import { getGuildTimezone, parseDateTimeInZone, formatDateTimeInZone } from '../../utils/datetime';
 
 export const editCommand: Command = {
   metadata: {
@@ -157,18 +158,8 @@ async function handleNewGoalThenEdit(interaction: any, task: any, guildId: strin
 }
 
 async function showEditModal(interaction: any, task: any, goalId: string | undefined) {
-  const currentDue = new Date(task.dueAt);
-  const dueStr = [
-    currentDue.getFullYear(),
-    '-',
-    String(currentDue.getMonth() + 1).padStart(2, '0'),
-    '-',
-    String(currentDue.getDate()).padStart(2, '0'),
-    ' ',
-    String(currentDue.getHours()).padStart(2, '0'),
-    ':',
-    String(currentDue.getMinutes()).padStart(2, '0'),
-  ].join('');
+  const timezone = await getGuildTimezone(task.guildId);
+  const dueStr = formatDateTimeInZone(new Date(task.dueAt), timezone);
 
   const modal = new ModalBuilder()
     .setCustomId('edit-task-modal')
@@ -223,12 +214,13 @@ async function handleEditModalSubmit(interaction: ModalSubmitInteraction, task: 
   const datetimeStr = interaction.fields.getTextInputValue('task-datetime');
   const notes = interaction.fields.getTextInputValue('task-notes') || undefined;
 
-  const dueDate = parseDateTime(datetimeStr);
+  const timezone = await getGuildTimezone(task.guildId);
+  const dueDate = parseDateTimeInZone(datetimeStr, timezone);
   if (!dueDate) {
     await interaction.reply({
       components: [
         new TextDisplayBuilder().setContent(
-          '❌ Invalid date/time format. Please use YYYY-MM-DD HH:mm (e.g., 2026-05-15 18:00)'
+          `❌ Invalid date/time. Use YYYY-MM-DD HH:mm in **${timezone}** with a future time (e.g., 2026-05-15 18:00).`,
         ),
       ],
       flags: [MessageFlags.IsComponentsV2],
@@ -389,25 +381,3 @@ async function saveTask(task: any, oldGoalId: string | null) {
   }
 }
 
-function parseDateTime(datetimeStr: string): Date | null {
-  const match = datetimeStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-
-  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
-  const year = parseInt(yearStr);
-  const month = parseInt(monthStr);
-  const day = parseInt(dayStr);
-  const hour = parseInt(hourStr);
-  const minute = parseInt(minuteStr);
-
-  if (year < 2000 || year > 2100) return null;
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > 31) return null;
-  if (hour < 0 || hour > 23) return null;
-  if (minute < 0 || minute > 59) return null;
-
-  const date = new Date(year, month - 1, day, hour, minute);
-  if (isNaN(date.getTime())) return null;
-
-  return date;
-}

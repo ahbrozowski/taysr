@@ -24,6 +24,7 @@ import { generateTaskId, generateGoalId } from '../../utils/taskId';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
 import { scheduleRemindersForTask } from '../../utils/reminders';
+import { getGuildTimezone, parseDateTimeInZone } from '../../utils/datetime';
 
 /**
  * Data structure for task creation
@@ -230,12 +231,14 @@ async function handleTaskModalSubmit(interaction: ModalSubmitInteraction, guildI
   const datetimeStr = interaction.fields.getTextInputValue('task-datetime');
   const notes = interaction.fields.getTextInputValue('task-notes') || undefined;
 
-  // Parse and validate datetime
-  const dueDate = parseDateTime(datetimeStr);
+  const timezone = await getGuildTimezone(guildId);
+  const dueDate = parseDateTimeInZone(datetimeStr, timezone);
   if (!dueDate) {
     await interaction.reply({
       components: [
-        new TextDisplayBuilder().setContent('❌ Invalid date/time. Please use YYYY-MM-DD HH:mm format with a future date (e.g., 2026-05-15 18:00)')
+        new TextDisplayBuilder().setContent(
+          `❌ Invalid date/time. Use YYYY-MM-DD HH:mm in **${timezone}** with a future time (e.g., 2026-05-15 18:00).`,
+        ),
       ],
       flags: [MessageFlags.IsComponentsV2],
       ephemeral: true,
@@ -425,38 +428,3 @@ async function createTask(taskData: TaskCreationData, guildId: string): Promise<
   return false;
 }
 
-function parseDateTime(datetimeStr: string): Date | null {
-  // Expected format: YYYY-MM-DD HH:mm
-  const match = datetimeStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})$/);
-  if (!match) {
-    return null;
-  }
-
-  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
-
-  const year = parseInt(yearStr);
-  const month = parseInt(monthStr);
-  const day = parseInt(dayStr);
-  const hour = parseInt(hourStr);
-  const minute = parseInt(minuteStr);
-
-  // Validate ranges
-  if (year < 2000 || year > 2100) return null;
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > 31) return null;
-  if (hour < 0 || hour > 23) return null;
-  if (minute < 0 || minute > 59) return null;
-
-  const date = new Date(year, month - 1, day, hour, minute);
-
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-
-  // Check if date is in the past
-  if (date.getTime() < Date.now()) {
-    return null;
-  }
-
-  return date;
-}
