@@ -14,9 +14,11 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
+import { TextChannel } from 'discord.js';
 import { Command } from '../registry';
-import { Bug, BugSeverity } from '../../models';
+import { Bug, BugSeverity, ServerConfig } from '../../models';
 import { generateBugId } from '../../utils/taskId';
+import { getClient } from '../../utils/client';
 
 const COLLECTOR_TIMEOUT = 120000;
 
@@ -177,6 +179,10 @@ async function saveBug(
 
   const severityOption = SEVERITY_OPTIONS.find(o => o.value === severity)!;
 
+  postBugSummary(guildId, bugId, title, description, severityOption, reporterId).catch((err) => {
+    console.error('Failed to post bug summary to task list channel:', err);
+  });
+
   await interaction.update({
     components: [
       new TextDisplayBuilder().setContent('# ✅ Bug Reported'),
@@ -185,5 +191,33 @@ async function saveBug(
         `**${bugId}** • ${title}\nSeverity: ${severityOption.emoji} ${severityOption.label}\n\nUse \`/bugs\` to view all reports.`,
       ),
     ],
+  });
+}
+
+async function postBugSummary(
+  guildId: string,
+  bugId: string,
+  title: string,
+  description: string | undefined,
+  severityOption: { emoji: string; label: string },
+  reporterId: string,
+) {
+  const config = await ServerConfig.findOne({ guildId }).lean();
+  if (!config?.taskListChannelId) return;
+
+  const client = getClient();
+  const channel = await client.channels.fetch(config.taskListChannelId);
+  if (!channel || !(channel instanceof TextChannel)) return;
+
+  const lines = [
+    `🐛 **${bugId}** — ${title}`,
+    `Severity: ${severityOption.emoji} ${severityOption.label} · Reported by <@${reporterId}>`,
+  ];
+  if (description) lines.push(description);
+  lines.push(`Use \`/bugs\` to view all reports.`);
+
+  await channel.send({
+    content: lines.join('\n'),
+    allowedMentions: { parse: [] },
   });
 }

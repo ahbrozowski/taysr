@@ -81,14 +81,14 @@ export const bugsCommand: Command = {
         const bugId = i.customId.split(':')[1];
         await Bug.findOneAndUpdate(
           { _id: bugId },
-          { $set: { status: 'resolved' } },
+          { $set: { status: 'resolved', resolvedBy: i.user.id, resolvedAt: new Date() } },
         );
         await i.update({ components: await render(state, guildId) });
       } else if (i.customId.startsWith('bugs-reopen:')) {
         const bugId = i.customId.split(':')[1];
         await Bug.findOneAndUpdate(
           { _id: bugId },
-          { $set: { status: 'open' } },
+          { $set: { status: 'open' }, $unset: { resolvedBy: '', resolvedAt: '' } },
         );
         await i.update({ components: await render(state, guildId) });
       }
@@ -200,6 +200,10 @@ async function buildBugList(state: BugsState, guildId: string) {
         `${statusIcon} **${bug.bugId}** • ${bug.title}`,
         `${meta.label} • Reported by ${reporter} • <t:${reportedAt}:R>`,
       ];
+      if (bug.status === 'resolved' && bug.resolvedBy && bug.resolvedAt) {
+        const resolvedTs = Math.floor(new Date(bug.resolvedAt).getTime() / 1000);
+        lines.push(`Resolved by <@${bug.resolvedBy}> <t:${resolvedTs}:R>`);
+      }
       if (bug.description) lines.push(`_${truncate(bug.description, 200)}_`);
 
       const button = bug.status === 'open'

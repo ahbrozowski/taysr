@@ -11,6 +11,8 @@ export interface IBug extends Document {
   severity: BugSeverity;
   reporterId: string;
   status: BugStatus;
+  resolvedBy?: string;
+  resolvedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,6 +25,8 @@ const bugSchema = new Schema<IBug>({
   severity: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
   reporterId: { type: String, required: true },
   status: { type: String, enum: ['open', 'resolved'], default: 'open' },
+  resolvedBy: { type: String, default: null },
+  resolvedAt: { type: Date, default: null },
 }, {
   timestamps: true,
 });
