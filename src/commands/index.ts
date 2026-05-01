@@ -11,6 +11,7 @@ import { takeCommand } from './definitions/take';
 import { unassignCommand } from './definitions/unassign';
 import { deleteCommand } from './definitions/delete';
 import { editCommand } from './definitions/edit';
+import { listCommand } from './definitions/list';
 import { settingsCommand } from './definitions/settings';
 import { permissionsCommand } from './definitions/permissions';
 import { plannedCommands } from './definitions/planned';
@@ -35,6 +36,7 @@ export function initializeCommands(taysrCommandName: string): void {
   commandRegistry.register(unassignCommand);
   commandRegistry.register(deleteCommand);
   commandRegistry.register(editCommand);
+  commandRegistry.register(listCommand);
   commandRegistry.register(settingsCommand);
   commandRegistry.register(permissionsCommand);
 

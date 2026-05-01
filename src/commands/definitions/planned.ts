@@ -15,17 +15,6 @@ const notImplementedExecute = async () => {
 export const plannedCommands: Command[] = [
   {
     metadata: {
-      name: 'list',
-      emoji: '📋',
-      description: 'List all tasks',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('list').setDescription('List all tasks in the server'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'set-timezone',
       emoji: '🌍',
       description: 'Set server timezone',
