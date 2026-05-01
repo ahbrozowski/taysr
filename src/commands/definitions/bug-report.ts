@@ -188,7 +188,7 @@ async function saveBug(
       new TextDisplayBuilder().setContent('# ✅ Bug Reported'),
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent(
-        `**${bugId}** • ${title}\nSeverity: ${severityOption.emoji} ${severityOption.label}\n\nUse \`/bugs\` to view all reports.`,
+        `**${bugId}** • ${title}\nSeverity: ${severityOption.emoji} ${severityOption.label}\n\nThanks for the report!`,
       ),
     ],
   });
@@ -214,7 +214,6 @@ async function postBugSummary(
     `Severity: ${severityOption.emoji} ${severityOption.label} · Reported by <@${reporterId}>`,
   ];
   if (description) lines.push(description);
-  lines.push(`Use \`/bugs\` to view all reports.`);
 
   await channel.send({
     content: lines.join('\n'),

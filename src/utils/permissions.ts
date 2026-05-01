@@ -5,6 +5,7 @@ import {
   PermissionFlagsBits,
 } from 'discord.js';
 import { CommandPermission } from '../models/CommandPermission';
+import { ServerConfig } from '../models/ServerConfig';
 import { CommandMetadata } from '../commands/registry';
 
 export interface PermissionCheckResult {
@@ -15,13 +16,14 @@ export interface PermissionCheckResult {
 /**
  * Checks if a user has permission to run a command in a guild.
  *
- * Rules:
+ * Order:
  * 1. Non-guild context → allowed
  * 2. Can't resolve GuildMember → denied
- * 3. User has Discord Administrator → always allowed
- * 4. No CommandPermission doc for this command → public (allowed)
- * 5. Doc exists with roleIds → user must have at least one
- * 6. No match → denied with required role names
+ * 3. Discord Administrator → allowed
+ * 4. Member has any all-access role from ServerConfig → allowed
+ * 5. CommandPermission doc with non-empty roleIds → role check
+ * 6. No doc + lockdown ON → denied
+ * 7. No doc + lockdown OFF → allowed (public default)
  */
 export async function checkCommandPermission(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
@@ -36,58 +38,70 @@ export async function checkCommandPermission(
     return { allowed: false, reason: 'Could not resolve your server membership.' };
   }
 
-  // Discord admins always bypass
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
     return { allowed: true };
   }
 
-  // Check CommandPermission for this specific command
+  const config = await ServerConfig.findOne({ guildId: interaction.guildId }).lean();
+  const memberRoleIds = member.roles.cache.map(r => r.id);
+
+  if (config?.allAccessRoleIds?.some(roleId => memberRoleIds.includes(roleId))) {
+    return { allowed: true };
+  }
+
   const perm = await CommandPermission.findOne({
     guildId: interaction.guildId,
     commandName: metadata.name,
   }).lean();
 
-  // No doc or empty roleIds → public
-  if (!perm || !perm.roleIds || perm.roleIds.length === 0) {
-    return { allowed: true };
+  if (perm && perm.roleIds && perm.roleIds.length > 0) {
+    if (perm.roleIds.some(roleId => memberRoleIds.includes(roleId))) {
+      return { allowed: true };
+    }
+
+    const roleNames = perm.roleIds
+      .map(id => {
+        const role = interaction.guild?.roles.cache.get(id);
+        return role ? `@${role.name}` : `<@&${id}>`;
+      })
+      .join(', ');
+
+    return {
+      allowed: false,
+      reason: `You need one of these roles to use this command: ${roleNames}`,
+    };
   }
 
-  // Check if user has at least one allowed role
-  const memberRoleIds = member.roles.cache.map(r => r.id);
-  if (perm.roleIds.some(roleId => memberRoleIds.includes(roleId))) {
-    return { allowed: true };
+  if (config?.lockdownEnabled) {
+    return {
+      allowed: false,
+      reason: 'Lockdown is enabled and this command has no roles configured. Ask an admin to grant access via `/permissions`.',
+    };
   }
 
-  // Build readable role list for the denial message
-  const roleNames = perm.roleIds
-    .map(id => {
-      const role = interaction.guild?.roles.cache.get(id);
-      return role ? `@${role.name}` : `<@&${id}>`;
-    })
-    .join(', ');
-
-  return {
-    allowed: false,
-    reason: `You need one of these roles to use this command: ${roleNames}`,
-  };
+  return { allowed: true };
 }
 
 /**
  * Checks which commands a user can access in a guild.
- * Returns the set of command names the user is allowed to use.
- * Used by the command picker to filter visible commands.
+ * Same logic as checkCommandPermission, batched into a single set lookup.
  */
 export async function getAccessibleCommands(
   member: GuildMember,
   guildId: string,
   commandNames: string[],
 ): Promise<Set<string>> {
-  // Admins can access everything
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
     return new Set(commandNames);
   }
 
-  // Fetch all permissions for this guild in one query
+  const config = await ServerConfig.findOne({ guildId }).lean();
+  const memberRoleIds = member.roles.cache.map(r => r.id);
+
+  if (config?.allAccessRoleIds?.some(roleId => memberRoleIds.includes(roleId))) {
+    return new Set(commandNames);
+  }
+
   const perms = await CommandPermission.find({ guildId }).lean();
   const permMap = new Map<string, string[]>();
   for (const perm of perms) {
@@ -96,15 +110,16 @@ export async function getAccessibleCommands(
     }
   }
 
-  const memberRoleIds = member.roles.cache.map(r => r.id);
   const accessible = new Set<string>();
+  const lockdown = config?.lockdownEnabled ?? false;
 
   for (const name of commandNames) {
     const allowedRoles = permMap.get(name);
-    if (!allowedRoles) {
-      // No restrictions — public
-      accessible.add(name);
-    } else if (allowedRoles.some(roleId => memberRoleIds.includes(roleId))) {
+    if (allowedRoles) {
+      if (allowedRoles.some(roleId => memberRoleIds.includes(roleId))) {
+        accessible.add(name);
+      }
+    } else if (!lockdown) {
       accessible.add(name);
     }
   }

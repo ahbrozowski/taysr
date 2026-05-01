@@ -17,6 +17,7 @@ import {
 } from 'discord.js';
 import { Command, commandRegistry } from '../registry';
 import { CommandPermission } from '../../models/CommandPermission';
+import { ServerConfig } from '../../models/ServerConfig';
 
 const COLLECTOR_TIMEOUT = 120000;
 
@@ -54,6 +55,9 @@ export const permissionsCommand: Command = {
 async function showRolesList(interaction: ChatInputCommandInteraction | ButtonInteraction) {
   const guildId = interaction.guildId!;
   const perms = await CommandPermission.find({ guildId }).lean();
+  const config = await ServerConfig.findOne({ guildId }).lean();
+  const lockdown = config?.lockdownEnabled ?? false;
+  const allAccessRoleIds = new Set(config?.allAccessRoleIds ?? []);
 
   // Build a map: roleId → [commandNames]
   const roleMap = new Map<string, string[]>();
@@ -65,45 +69,70 @@ async function showRolesList(interaction: ChatInputCommandInteraction | ButtonIn
     }
   }
 
+  // Surface all-access roles even if they have no per-command grants
+  for (const roleId of allAccessRoleIds) {
+    if (!roleMap.has(roleId)) roleMap.set(roleId, []);
+  }
+
   const components: any[] = [
     new TextDisplayBuilder().setContent('# 🔒 Command Permissions'),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          lockdown
+            ? '**Lockdown: ON** — commands without roles configured are denied by default.'
+            : '**Lockdown: OFF** — commands without roles configured are public.',
+        ),
+      )
+      .setButtonAccessory(
+        new ButtonBuilder()
+          .setCustomId('perm-lockdown-toggle')
+          .setLabel(lockdown ? 'Disable Lockdown' : 'Enable Lockdown')
+          .setStyle(lockdown ? ButtonStyle.Danger : ButtonStyle.Primary),
+      ),
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
   ];
 
   if (roleMap.size === 0) {
     components.push(
       new TextDisplayBuilder().setContent(
-        'No roles configured yet. All commands are public.\n\n' +
-        'Add a role to restrict which commands it can access.'
-      )
+        'No roles configured yet. Add a role to grant it command access or all-access.',
+      ),
     );
   } else {
     components.push(
-      new TextDisplayBuilder().setContent('Roles with command access configured:')
+      new TextDisplayBuilder().setContent('Configured roles:'),
     );
 
     for (const [roleId, cmdNames] of roleMap) {
       const role = interaction.guild?.roles.cache.get(roleId);
       const roleName = role ? `@${role.name}` : `*Deleted role*`;
-      const cmdCount = cmdNames.length;
-      const cmdLabel = cmdCount === 1 ? '1 command' : `${cmdCount} commands`;
+      const isAllAccess = allAccessRoleIds.has(roleId);
+
+      let summary: string;
+      if (isAllAccess) {
+        summary = '🔑 **All-access** (bypasses every permission check)';
+      } else {
+        const cmdCount = cmdNames.length;
+        summary = cmdCount === 1 ? '1 command' : `${cmdCount} commands`;
+      }
 
       components.push(
         new SectionBuilder()
           .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(`**${roleName}** — ${cmdLabel}`)
+            new TextDisplayBuilder().setContent(`**${roleName}** — ${summary}`),
           )
           .setButtonAccessory(
             new ButtonBuilder()
               .setCustomId(`perm-role:${roleId}`)
               .setLabel('Configure')
-              .setStyle(ButtonStyle.Secondary)
-          )
+              .setStyle(ButtonStyle.Secondary),
+          ),
       );
     }
   }
 
-  // Add Role button
   const addRoleSelect = new RoleSelectMenuBuilder()
     .setCustomId('perm-add-role')
     .setPlaceholder('Add a role...');
@@ -118,13 +147,22 @@ async function showRolesList(interaction: ChatInputCommandInteraction | ButtonIn
   const collector = message!.createMessageComponentCollector({
     filter: (i: any) =>
       i.user.id === interaction.user.id &&
-      (i.customId.startsWith('perm-role:') || i.customId === 'perm-add-role'),
+      (i.customId.startsWith('perm-role:') ||
+       i.customId === 'perm-add-role' ||
+       i.customId === 'perm-lockdown-toggle'),
     max: 1,
     time: COLLECTOR_TIMEOUT,
   });
 
   collector.on('collect', async (i: any) => {
-    if (i.customId === 'perm-add-role') {
+    if (i.customId === 'perm-lockdown-toggle') {
+      await ServerConfig.findOneAndUpdate(
+        { guildId },
+        { $set: { lockdownEnabled: !lockdown } },
+        { upsert: true },
+      );
+      await showRolesList(i);
+    } else if (i.customId === 'perm-add-role') {
       const roleId = i.values[0];
 
       // Don't allow @everyone
@@ -148,7 +186,6 @@ async function showRoleDetail(interaction: any, roleId: string) {
   const role = interaction.guild?.roles.cache.get(roleId);
   const roleName = role ? `@${role.name}` : `*Deleted role*`;
 
-  // Get all permissions for this guild
   const perms = await CommandPermission.find({ guildId }).lean();
   const roleCommands = new Set<string>();
   for (const p of perms) {
@@ -157,15 +194,36 @@ async function showRoleDetail(interaction: any, roleId: string) {
     }
   }
 
+  const config = await ServerConfig.findOne({ guildId }).lean();
+  const isAllAccess = (config?.allAccessRoleIds ?? []).includes(roleId);
+
   const commands = getConfigurableCommands();
 
   const components: any[] = [
     new TextDisplayBuilder().setContent(`# 🔒 ${roleName}`),
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-    new TextDisplayBuilder().setContent('Select commands this role can access:'),
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          isAllAccess
+            ? '🔑 **All-access enabled** — this role bypasses every permission check, including any commands added later.'
+            : 'Grant this role access to every command (current and future) in one toggle.',
+        ),
+      )
+      .setButtonAccessory(
+        new ButtonBuilder()
+          .setCustomId(`perm-allaccess:${roleId}`)
+          .setLabel(isAllAccess ? 'Revoke All-Access' : 'Grant All-Access')
+          .setStyle(isAllAccess ? ButtonStyle.Danger : ButtonStyle.Primary),
+      ),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    new TextDisplayBuilder().setContent(
+      isAllAccess
+        ? 'Per-command grants below are still tracked but redundant while all-access is on:'
+        : 'Select commands this role can access:',
+    ),
   ];
 
-  // Command toggle select menu (multi-select)
   const select = new StringSelectMenuBuilder()
     .setCustomId(`perm-toggle:${roleId}`)
     .setPlaceholder('Select commands...')
@@ -180,13 +238,12 @@ async function showRoleDetail(interaction: any, roleId: string) {
         .setValue(cmd.metadata.name)
         .setDescription(cmd.metadata.description)
         .setEmoji(cmd.metadata.emoji)
-        .setDefault(hasAccess)
+        .setDefault(hasAccess),
     );
   }
 
   components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
 
-  // Action buttons
   const buttons: ButtonBuilder[] = [];
 
   if (roleCommands.size > 0) {
@@ -194,7 +251,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
       new ButtonBuilder()
         .setCustomId(`perm-remove-role:${roleId}`)
         .setLabel('Remove All')
-        .setStyle(ButtonStyle.Danger)
+        .setStyle(ButtonStyle.Danger),
     );
   }
 
@@ -202,7 +259,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
     new ButtonBuilder()
       .setCustomId('perm-back')
       .setLabel('Back')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Secondary),
   );
 
   components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(buttons));
@@ -215,6 +272,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
       i.user.id === interaction.user.id &&
       (i.customId === `perm-toggle:${roleId}` ||
        i.customId === `perm-remove-role:${roleId}` ||
+       i.customId === `perm-allaccess:${roleId}` ||
        i.customId === 'perm-back'),
     max: 1,
     time: COLLECTOR_TIMEOUT,
@@ -223,43 +281,47 @@ async function showRoleDetail(interaction: any, roleId: string) {
   collector.on('collect', async (i: any) => {
     if (i.customId === 'perm-back') {
       await showRolesList(i);
+    } else if (i.customId === `perm-allaccess:${roleId}`) {
+      if (isAllAccess) {
+        await ServerConfig.findOneAndUpdate(
+          { guildId },
+          { $pull: { allAccessRoleIds: roleId } },
+        );
+      } else {
+        await ServerConfig.findOneAndUpdate(
+          { guildId },
+          { $addToSet: { allAccessRoleIds: roleId } },
+          { upsert: true },
+        );
+      }
+      await showRoleDetail(i, roleId);
     } else if (i.customId === `perm-remove-role:${roleId}`) {
-      // Remove this role from all commands
       await CommandPermission.updateMany(
         { guildId },
-        { $pull: { roleIds: roleId } }
+        { $pull: { roleIds: roleId } },
       );
-      // Clean up empty documents
       await CommandPermission.deleteMany({ guildId, roleIds: { $size: 0 } });
-
       await showRolesList(i);
     } else if (i.customId === `perm-toggle:${roleId}`) {
       const selectedCommands = new Set<string>(i.values);
-
-      // Determine what to add and what to remove
       const allCommands = commands.map(c => c.metadata.name);
 
       for (const cmdName of allCommands) {
         if (selectedCommands.has(cmdName) && !roleCommands.has(cmdName)) {
-          // Add role to this command
           await CommandPermission.findOneAndUpdate(
             { guildId, commandName: cmdName },
             { $addToSet: { roleIds: roleId } },
-            { upsert: true }
+            { upsert: true },
           );
         } else if (!selectedCommands.has(cmdName) && roleCommands.has(cmdName)) {
-          // Remove role from this command
           await CommandPermission.findOneAndUpdate(
             { guildId, commandName: cmdName },
-            { $pull: { roleIds: roleId } }
+            { $pull: { roleIds: roleId } },
           );
         }
       }
 
-      // Clean up empty documents
       await CommandPermission.deleteMany({ guildId, roleIds: { $size: 0 } });
-
-      // Refresh the detail view
       await showRoleDetail(i, roleId);
     }
   });
