@@ -251,7 +251,14 @@ The bot uses a modular command system with a central registry pattern:
 - `createdAt`, `updatedAt` - Timestamps
 
 **Reminder Model** ([src/models/Reminder.ts](src/models/Reminder.ts))
-- Infrastructure for task reminders (planned feature)
+- `taskId` - Mongo ObjectId of the associated task (string form)
+- `guildId` - Discord server ID for isolation
+- `assigneeId` - Snapshot of who should be DMed when this fires
+- `offset` - Cadence offset string (e.g., `1d`, `4h`, `30m`)
+- `sendAt` - When this reminder should fire
+- `sentAt` - When it was actually delivered
+- `status` - `pending`, `sent`, `canceled`, or `failed`
+- Compound unique index on `(taskId, offset)`
 
 ### Interactive UI Components
 
@@ -366,7 +373,6 @@ When modifying Mongoose models:
 
 ### Upcoming Features
 
-- **Reminder Delivery** - Background scheduler that DMs assignees per `/set-reminders` cadence
 - **Recurring Tasks** - Support for repeating tasks
 - **Task Templates** - Pre-defined task templates
 - **Analytics** - Task completion statistics and reports

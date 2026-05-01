@@ -126,9 +126,15 @@ Extract it. Parameterize it. The owner hates duplicate code.
 - `Task` — taskId (T-001), title, dueAt, goalId, assigneeId, guildId, status
 - `Goal` — goalId (G-001), name, guildId, channelId, messageId, status
 - `Bug` — bugId (B-001), title, description, severity, reporterId, guildId, status
+- `Reminder` — taskId, guildId, assigneeId, offset, sendAt, status (compound unique on taskId+offset)
 - `Counter` — atomic guild-scoped ID generation
 - `ServerConfig` — guild settings (channels, timezone, reminder cadence)
 - `CommandPermission` — role-based command access
+
+### Reminder scheduler (`src/utils/reminders.ts`)
+- `scheduleRemindersForTask(task)` — call after any mutation that affects assignee/dueAt/status; idempotent upsert
+- `cancelRemindersForTask(taskMongoId)` — call after complete/delete/unassign
+- `processDueReminders(client)` — DMs assignees, marks sent/failed; runs every 60s via `startReminderScheduler`
 
 ### ID generation
 - `generateTaskId(guildId)` → `T-001`, `T-002`, ...
