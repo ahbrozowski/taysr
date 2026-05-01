@@ -23,6 +23,7 @@ import { generateGoalId } from '../../utils/taskId';
 import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
+import { scheduleRemindersForTask } from '../../utils/reminders';
 
 export const editCommand: Command = {
   metadata: {
@@ -365,6 +366,10 @@ async function saveTask(task: any, oldGoalId: string | null) {
 
   const client = getClient();
   const guildId = task.guildId;
+
+  scheduleRemindersForTask(task).catch((err: any) => {
+    console.error('Failed to schedule reminders:', err);
+  });
 
   updatePinnedTaskList(client, guildId).catch((err: any) => {
     console.error('Failed to update pinned task list:', err);

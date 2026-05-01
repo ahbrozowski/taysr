@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { connectToDatabase, disconnectFromDatabase, Task } from './models';
 import { initializeCommands, getCommandsForRegistration, executeCommand } from './commands';
 import { setClient } from './utils/client';
+import { startReminderScheduler } from './utils/reminders';
 
 // Load environment variables
 dotenv.config();
@@ -45,10 +46,15 @@ const client = new Client({
   ],
 });
 
+let stopReminderScheduler: (() => void) | null = null;
+
 // When the bot is ready
 client.once(Events.ClientReady, (c) => {
   setClient(client);
   console.log(`✅ Bot is ready! Logged in as ${c.user.tag}`);
+
+  stopReminderScheduler = startReminderScheduler(client);
+  console.log('✅ Reminder scheduler started');
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -137,6 +143,11 @@ async function shutdown(signal: string) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
 
   try {
+    if (stopReminderScheduler) {
+      stopReminderScheduler();
+      console.log('✅ Reminder scheduler stopped');
+    }
+
     // Destroy Discord client
     await client.destroy();
     console.log('✅ Discord client destroyed');

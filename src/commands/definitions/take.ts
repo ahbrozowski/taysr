@@ -7,6 +7,7 @@ import {
 import { Command } from '../registry';
 import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
+import { scheduleRemindersForTask } from '../../utils/reminders';
 
 export const takeCommand: Command = {
   metadata: {
@@ -31,6 +32,10 @@ export const takeCommand: Command = {
       onSelect: async (task, i) => {
         task.assigneeId = i.user.id;
         await task.save();
+
+        scheduleRemindersForTask(task).catch((err: any) => {
+          console.error('Failed to schedule reminders:', err);
+        });
 
         updatePinnedTaskList(i.client, i.guildId).catch((err: any) => {
           console.error('Failed to update pinned task list:', err);

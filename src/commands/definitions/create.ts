@@ -23,6 +23,7 @@ import { Goal, Task } from '../../models';
 import { generateTaskId, generateGoalId } from '../../utils/taskId';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { getClient } from '../../utils/client';
+import { scheduleRemindersForTask } from '../../utils/reminders';
 
 /**
  * Data structure for task creation
@@ -396,7 +397,7 @@ async function createTask(taskData: TaskCreationData, guildId: string): Promise<
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      await Task.create(taskData);
+      const created = await Task.create(taskData);
 
       const client = getClient();
       await updatePinnedTaskList(client, guildId);
@@ -404,6 +405,11 @@ async function createTask(taskData: TaskCreationData, guildId: string): Promise<
       if (taskData.goalId) {
         await updateGoalPinnedList(client, taskData.goalId);
       }
+
+      scheduleRemindersForTask(created).catch((err) => {
+        console.error('Failed to schedule reminders:', err);
+      });
+
       return true;
     } catch (error: any) {
       if (error.code === 11000 && attempt < MAX_RETRIES - 1) {

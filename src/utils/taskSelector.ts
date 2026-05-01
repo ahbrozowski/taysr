@@ -14,6 +14,7 @@ import {
 
 import { Goal, Task } from '../models';
 import { updatePinnedTaskList, updateGoalPinnedList } from './taskList';
+import { cancelRemindersForTask } from './reminders';
 
 interface TaskSelectorState {
   page: number;
@@ -199,6 +200,10 @@ export async function createTaskListPage(interaction: ChatInputCommandInteractio
     onSelect: async (task, i) => {
       task.status = 'complete';
       await task.save();
+
+      cancelRemindersForTask(task._id.toString()).catch((err: any) => {
+        console.error('Failed to cancel reminders:', err);
+      });
 
       updatePinnedTaskList(i.client, i.guildId).catch((err: any) => {
         console.error('Failed to update pinned task list:', err);

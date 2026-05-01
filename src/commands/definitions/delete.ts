@@ -7,6 +7,7 @@ import {
 import { Command } from '../registry';
 import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
+import { cancelRemindersForTask } from '../../utils/reminders';
 import { Task } from '../../models';
 
 export const deleteCommand: Command = {
@@ -31,8 +32,13 @@ export const deleteCommand: Command = {
       onSelect: async (task, i) => {
         const taskId = task.taskId;
         const goalId = task.goalId;
+        const taskMongoId = task._id.toString();
 
         await Task.deleteOne({ _id: task._id });
+
+        cancelRemindersForTask(taskMongoId).catch((err: any) => {
+          console.error('Failed to cancel reminders:', err);
+        });
 
         updatePinnedTaskList(i.client, i.guildId).catch((err: any) => {
           console.error('Failed to update pinned task list:', err);
