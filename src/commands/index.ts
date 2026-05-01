@@ -14,6 +14,7 @@ import { editCommand } from './definitions/edit';
 import { listCommand } from './definitions/list';
 import { bugReportCommand } from './definitions/bug-report';
 import { bugsCommand } from './definitions/bugs';
+import { setManagerRoleCommand } from './definitions/set-manager-role';
 import { setRemindersCommand } from './definitions/set-reminders';
 import { setTimezoneCommand } from './definitions/set-timezone';
 import { settingsCommand } from './definitions/settings';
@@ -45,6 +46,7 @@ export function initializeCommands(taysrCommandName: string): void {
   commandRegistry.register(bugsCommand);
   commandRegistry.register(setTimezoneCommand);
   commandRegistry.register(setRemindersCommand);
+  commandRegistry.register(setManagerRoleCommand);
   commandRegistry.register(settingsCommand);
   commandRegistry.register(permissionsCommand);
 
