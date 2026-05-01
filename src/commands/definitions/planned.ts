@@ -15,17 +15,6 @@ const notImplementedExecute = async () => {
 export const plannedCommands: Command[] = [
   {
     metadata: {
-      name: 'set-timezone',
-      emoji: '🌍',
-      description: 'Set server timezone',
-      implemented: false,
-      requiresGuild: true,
-    },
-    build: () => new SlashCommandBuilder().setName('set-timezone').setDescription('Set the server timezone'),
-    execute: notImplementedExecute,
-  },
-  {
-    metadata: {
       name: 'set-reminders',
       emoji: '⏰',
       description: 'Configure reminders',
