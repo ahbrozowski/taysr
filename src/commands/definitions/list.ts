@@ -31,7 +31,7 @@ interface ListState {
 export const listCommand: Command = {
   metadata: {
     name: 'list',
-    emoji: '📋',
+    emoji: '📃',
     description: 'List tasks with filters',
     implemented: true,
     requiresGuild: true,

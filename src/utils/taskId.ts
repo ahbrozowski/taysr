@@ -57,3 +57,21 @@ export async function generateGoalId(guildId: string): Promise<string> {
   return `G-${nextNumber.toString().padStart(3, '0')}`;
 }
 
+/**
+ * Generates a unique bug ID like B-001, B-002, etc. using atomic MongoDB counter.
+ */
+export async function generateBugId(guildId: string): Promise<string> {
+  const counter = await Counter.findOneAndUpdate(
+    { _id: `${guildId}:bug` },
+    { $inc: { sequence: 1 } },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true
+    }
+  );
+
+  const nextNumber = counter.sequence;
+  return `B-${nextNumber.toString().padStart(3, '0')}`;
+}
+

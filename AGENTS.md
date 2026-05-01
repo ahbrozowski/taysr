@@ -125,12 +125,15 @@ Extract it. Parameterize it. The owner hates duplicate code.
 ### Data models (Mongoose)
 - `Task` — taskId (T-001), title, dueAt, goalId, assigneeId, guildId, status
 - `Goal` — goalId (G-001), name, guildId, channelId, messageId, status
+- `Bug` — bugId (B-001), title, description, severity, reporterId, guildId, status
 - `Counter` — atomic guild-scoped ID generation
-- `Config` — guild settings (channelId, messageId for pinned lists)
+- `ServerConfig` — guild settings (channels, timezone, reminder cadence)
+- `CommandPermission` — role-based command access
 
 ### ID generation
 - `generateTaskId(guildId)` → `T-001`, `T-002`, ...
 - `generateGoalId(guildId)` → `G-001`, `G-002`, ...
+- `generateBugId(guildId)` → `B-001`, `B-002`, ...
 - Uses atomic `Counter.findOneAndUpdate` with `$inc`
 
 ## Local setup
@@ -145,8 +148,10 @@ Extract it. Parameterize it. The owner hates duplicate code.
 - Start: `npm start`
 
 ## Implemented commands
-`/taysr`, `/help`, `/create`, `/complete`, `/assign`, `/take`, `/unassign`,
-`/goal`, `/set-channel`, `/refresh`
+`/taysr`, `/help`, `/create`, `/complete`, `/edit`, `/delete`, `/list`,
+`/assign`, `/take`, `/unassign`, `/goal`, `/refresh`,
+`/bug-report`, `/bugs`,
+`/settings`, `/permissions`, `/set-channel`, `/set-timezone`, `/set-reminders`
 
 ## Planned commands
-`/edit`, `/delete`, `/list`, `/bug-report`, `/bugs`, `/set-timezone`, `/set-reminders`
+_All previously planned commands have shipped._

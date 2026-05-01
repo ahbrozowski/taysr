@@ -19,7 +19,7 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 
 ## Commands
 
-### Implemented Commands (13)
+### Implemented Commands
 
 | Command | Icon | Description |
 |---------|------|-------------|
@@ -27,22 +27,21 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 | `/help` | ❓ | Display help information and command picker |
 | `/create` | ➕ | Create a new task - goal picker, modal form (title, due date/time, notes), assignee selection |
 | `/complete` | ✅ | Mark a task as complete - shows paginated list with filtering options |
-| `/goal` | 🎯 | Create a new goal with optional channel linking |
-| `/set-channel` | 📌 | Set a channel for the task list or link a goal to a channel |
-| `/refresh` | 🔄 | Rebuild the pinned task list from database |
+| `/edit` | ✏️ | Edit a task - change goal, title, due date, notes, and assignee |
+| `/delete` | 🗑️ | Delete a task with confirmation |
+| `/list` | 📃 | Paginated task viewer with status, goal, and assignee filters |
 | `/assign` | 👥 | Assign a task to a user via task picker and user select |
 | `/take` | ✋ | Self-assign an unassigned task |
 | `/unassign` | ❌ | Remove assignee from a task |
-| `/delete` | 🗑️ | Delete a task with confirmation |
-| `/edit` | ✏️ | Edit a task - change goal, title, due date, notes, and assignee |
-
-### Planned Commands (5)
-
-- `/list` - View all tasks with filtering options
-- `/set-timezone` - Configure server timezone for due dates
-- `/set-reminders` - Configure reminder cadence for upcoming tasks
-- `/bug-report` - Report a bug with title, description, and severity
-- `/bugs` - View and manage bug reports
+| `/goal` | 🎯 | Create a new goal with optional channel linking |
+| `/refresh` | 🔄 | Rebuild the pinned task list from database |
+| `/bug-report` | 🐛 | Report a bug with title, description, and severity |
+| `/bugs` | 🪲 | View, filter, and resolve bug reports |
+| `/settings` | ⚙️ | Manage server settings (admin only) |
+| `/permissions` | 🔒 | Manage which roles can use each command (admin only) |
+| `/set-channel` | 📌 | Set a channel for the task list or link a goal to a channel |
+| `/set-timezone` | 🌍 | Configure server timezone for due dates |
+| `/set-reminders` | ⏰ | Configure reminder cadence for upcoming tasks |
 
 ## Tech Stack
 
@@ -241,6 +240,16 @@ The bot uses a modular command system with a central registry pattern:
 - `messageId` - Pinned message ID in linked channel
 - `createdAt`, `updatedAt` - Timestamps
 
+**Bug Model** ([src/models/Bug.ts](src/models/Bug.ts))
+- `bugId` - Human-readable ID (B-001, B-002, etc.)
+- `guildId` - Discord server ID for isolation
+- `title` - Bug title
+- `description` - Optional details (steps, expected vs actual)
+- `severity` - One of `low`, `medium`, `high`, `critical`
+- `reporterId` - Discord user ID of the reporter
+- `status` - Bug status (open, resolved)
+- `createdAt`, `updatedAt` - Timestamps
+
 **Reminder Model** ([src/models/Reminder.ts](src/models/Reminder.ts))
 - Infrastructure for task reminders (planned feature)
 
@@ -357,14 +366,10 @@ When modifying Mongoose models:
 
 ### Upcoming Features
 
-- **Advanced Listing** - `/list` command with filtering and sorting
-- **Bug Tracking** - `/bug-report` and `/bugs` commands
-- **Timezone Support** - Server-specific timezone configuration
-- **Task Reminders** - Automated reminders for upcoming due dates
+- **Reminder Delivery** - Background scheduler that DMs assignees per `/set-reminders` cadence
 - **Recurring Tasks** - Support for repeating tasks
 - **Task Templates** - Pre-defined task templates
 - **Analytics** - Task completion statistics and reports
-- **Role-Based Permissions** - Admin and member role configurations
 
 ### Infrastructure Improvements
 
