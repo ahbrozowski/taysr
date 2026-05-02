@@ -244,7 +244,7 @@ async function createGoal(data: {
     name: data.name,
     description: data.description,
     channelId: data.channelId || undefined,
-    messageId: undefined,
+    messageIds: [],
     status: 'active',
   });
 }

@@ -165,7 +165,7 @@ async function directLinkGoal(
   }
 
   goal.channelId = channelId;
-  goal.messageId = undefined;
+  goal.messageIds = [];
   await goal.save();
 
   const client = getClient();
@@ -204,16 +204,22 @@ async function handleServerScope(interaction: ChatInputCommandInteraction | Butt
   try {
     let config = await ServerConfig.findOne({ guildId: interaction.guildId! });
 
-    if (config && config.taskListChannelId && config.taskListMessageId) {
+    if (config && config.taskListChannelId && config.taskListMessageIds && config.taskListMessageIds.length > 0) {
       try {
         const client = getClient();
         const oldChannel = await client.channels.fetch(config.taskListChannelId);
         if (oldChannel && oldChannel.isTextBased() && oldChannel instanceof TextChannel) {
-          const oldMessage = await oldChannel.messages.fetch(config.taskListMessageId);
-          await oldMessage.delete();
+          for (const id of config.taskListMessageIds) {
+            try {
+              const oldMessage = await oldChannel.messages.fetch(id);
+              await oldMessage.delete();
+            } catch {
+              // already gone
+            }
+          }
         }
       } catch (error) {
-        console.error('Could not delete old pinned message:', error);
+        console.error('Could not delete old pinned messages:', error);
       }
     }
 
@@ -224,7 +230,7 @@ async function handleServerScope(interaction: ChatInputCommandInteraction | Butt
       });
     } else {
       config.taskListChannelId = targetChannel.id;
-      config.taskListMessageId = undefined;
+      config.taskListMessageIds = [];
     }
 
     await config.save();
@@ -353,7 +359,7 @@ async function showGoalChannelOptions(interaction: any, goal: any) {
     if (i.customId === `setchan-unlink:${goal.goalId}`) {
       await deleteGoalPinnedMessage(goal);
       goal.channelId = undefined;
-      goal.messageId = undefined;
+      goal.messageIds = [];
       await goal.save();
 
       await i.update({
@@ -370,7 +376,7 @@ async function showGoalChannelOptions(interaction: any, goal: any) {
       }
 
       goal.channelId = channelId;
-      goal.messageId = undefined;
+      goal.messageIds = [];
       await goal.save();
 
       const client = getClient();
@@ -407,14 +413,20 @@ async function respondToInteraction(
 }
 
 async function deleteGoalPinnedMessage(goal: any) {
-  if (!goal.channelId || !goal.messageId) return;
+  if (!goal.channelId || !goal.messageIds || goal.messageIds.length === 0) return;
 
   try {
     const client = getClient();
     const channel = await client.channels.fetch(goal.channelId);
     if (channel && channel.isTextBased() && channel instanceof TextChannel) {
-      const message = await channel.messages.fetch(goal.messageId);
-      await message.delete();
+      for (const id of goal.messageIds) {
+        try {
+          const message = await channel.messages.fetch(id);
+          await message.delete();
+        } catch {
+          // already gone
+        }
+      }
     }
   } catch (error) {
     console.error('Could not delete old goal pinned message:', error);

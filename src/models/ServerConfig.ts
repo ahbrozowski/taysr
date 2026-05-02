@@ -3,7 +3,7 @@ import { Schema, model, Document } from 'mongoose';
 export interface IServerConfig extends Document {
   guildId: string;
   taskListChannelId?: string;
-  taskListMessageId?: string;
+  taskListMessageIds: string[];
   timezone: string;
   reminderCadence: string[];
   lockdownEnabled: boolean;
@@ -13,7 +13,7 @@ export interface IServerConfig extends Document {
 const serverConfigSchema = new Schema<IServerConfig>({
   guildId: { type: String, required: true, unique: true },
   taskListChannelId: { type: String, default: null },
-  taskListMessageId: { type: String, default: null },
+  taskListMessageIds: { type: [String], default: [] },
   timezone: { type: String, default: 'UTC' },
   reminderCadence: { type: [String], default: [] },
   lockdownEnabled: { type: Boolean, default: false },
