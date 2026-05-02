@@ -3,20 +3,23 @@
 # Deployment script for Discord bot on GCP e2-micro
 # Run this script on your VM after initial setup
 
-set -e
+set -euo pipefail
 
 echo "🚀 Starting deployment..."
 
 # Navigate to project directory
 cd ~/taysr
 
-# Pull latest changes
-echo "📥 Pulling latest code from GitHub..."
-git pull
+# Force-sync to remote so local mutations (e.g., npm install rewriting
+# package-lock.json) never block the deploy.
+echo "📥 Syncing to origin/main..."
+git fetch origin
+git reset --hard origin/main
+git clean -fd -e .env -e node_modules
 
-# Install dependencies
+# Deterministic install based on the committed lockfile.
 echo "📦 Installing dependencies..."
-npm install
+npm ci
 
 # Build TypeScript
 echo "🔨 Building TypeScript..."
