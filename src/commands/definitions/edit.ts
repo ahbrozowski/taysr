@@ -25,6 +25,7 @@ import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList
 import { getClient } from '../../utils/client';
 import { scheduleRemindersForTask } from '../../utils/reminders';
 import { getGuildTimezone, parseDateTimeInZone, formatDateTimeInZone } from '../../utils/datetime';
+import { isRestrictedToOwnTasks } from '../../utils/permissions';
 
 export const editCommand: Command = {
   metadata: {
@@ -42,9 +43,14 @@ export const editCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
+    const taskFilter = (await isRestrictedToOwnTasks(interaction, 'edit'))
+      ? { assigneeId: interaction.user.id }
+      : undefined;
+
     await createTaskSelector(interaction, {
       actionLabel: 'Edit',
       guildId: interaction.guildId || undefined,
+      taskFilter,
       onSelect: async (task, i) => {
         const guildId = i.guildId!;
         await showGoalPicker(task, i, guildId);

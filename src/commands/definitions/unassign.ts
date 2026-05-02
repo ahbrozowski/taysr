@@ -8,6 +8,7 @@ import { Command } from '../registry';
 import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { cancelRemindersForTask } from '../../utils/reminders';
+import { isRestrictedToOwnTasks } from '../../utils/permissions';
 
 export const unassignCommand: Command = {
   metadata: {
@@ -25,10 +26,15 @@ export const unassignCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
+    const restricted = await isRestrictedToOwnTasks(interaction, 'unassign');
+    const taskFilter = restricted
+      ? { assigneeId: interaction.user.id }
+      : { assigneeId: { $ne: null } };
+
     await createTaskSelector(interaction, {
       actionLabel: 'Unassign',
       guildId: interaction.guildId || undefined,
-      taskFilter: { assigneeId: { $ne: null } },
+      taskFilter,
       onSelect: async (task, i) => {
         const previousAssignee = task.assigneeId;
         task.assigneeId = null;

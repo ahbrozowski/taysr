@@ -2,16 +2,10 @@ import {
   ChatInputCommandInteraction,
   ButtonInteraction,
   SlashCommandBuilder,
-  ChannelType,
-  MessageFlags,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  TextChannel,
 } from 'discord.js';
 import { Command } from '../registry';
-import { showCommandPicker } from '../../utils/commandPicker';
 import { createTaskListPage } from '../../utils/taskSelector';
+import { isRestrictedToOwnTasks } from '../../utils/permissions';
 
 
 export const completeCommand: Command = {
@@ -30,6 +24,9 @@ export const completeCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
-    await createTaskListPage(interaction);
+    const taskFilter = (await isRestrictedToOwnTasks(interaction, 'complete'))
+      ? { assigneeId: interaction.user.id }
+      : undefined;
+    await createTaskListPage(interaction, taskFilter);
   },
 };

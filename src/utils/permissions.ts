@@ -102,6 +102,55 @@ export async function checkCommandPermission(
  * Checks which commands a user can access in a guild.
  * Same logic as checkCommandPermission, batched into a single set lookup.
  */
+/**
+ * Returns true if the user can only operate on tasks assigned to themselves.
+ * - Discord admin → false (full access)
+ * - Has any all-access role → false
+ * - Has at least one ownTasksOnly role AND no unrestricted role grant for this
+ *   specific command → true
+ * - Otherwise false
+ *
+ * Public commands (no CommandPermission doc) where the user has any
+ * ownTasksOnly role and no unrestricted role still count as restricted —
+ * the user's effective profile is "limited member."
+ */
+export async function isRestrictedToOwnTasks(
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+  commandName: string,
+): Promise<boolean> {
+  if (!interaction.guildId) return false;
+
+  const member = interaction.member as GuildMember | null;
+  if (!member) return false;
+
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) return false;
+
+  const config = await ServerConfig.findOne({ guildId: interaction.guildId }).lean();
+  const memberRoleIds = member.roles.cache.map(r => r.id);
+  memberRoleIds.push(interaction.guildId); // @everyone
+
+  const allAccess = config?.allAccessRoleIds ?? [];
+  if (allAccess.some(id => memberRoleIds.includes(id))) return false;
+
+  const ownTasksOnly = config?.ownTasksOnlyRoleIds ?? [];
+  const userOwnTasksOnlyRoles = ownTasksOnly.filter(id => memberRoleIds.includes(id));
+  if (userOwnTasksOnlyRoles.length === 0) return false;
+
+  // Does the user have any non-ownTasksOnly role that grants this command?
+  const perm = await CommandPermission.findOne({
+    guildId: interaction.guildId,
+    commandName,
+  }).lean();
+
+  if (perm && perm.roleIds && perm.roleIds.length > 0) {
+    const grantingRolesUserHas = perm.roleIds.filter(id => memberRoleIds.includes(id));
+    const unrestrictedGrantingRoles = grantingRolesUserHas.filter(id => !ownTasksOnly.includes(id));
+    if (unrestrictedGrantingRoles.length > 0) return false;
+  }
+
+  return true;
+}
+
 export async function getAccessibleCommands(
   member: GuildMember,
   guildId: string,

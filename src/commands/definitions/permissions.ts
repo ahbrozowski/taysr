@@ -205,6 +205,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
 
   const config = await ServerConfig.findOne({ guildId }).lean();
   const isAllAccess = (config?.allAccessRoleIds ?? []).includes(roleId);
+  const isOwnTasksOnly = (config?.ownTasksOnlyRoleIds ?? []).includes(roleId);
 
   const commands = getConfigurableCommands();
 
@@ -224,6 +225,21 @@ async function showRoleDetail(interaction: any, roleId: string) {
           .setCustomId(`perm-allaccess:${roleId}`)
           .setLabel(isAllAccess ? 'Revoke All-Access' : 'Grant All-Access')
           .setStyle(isAllAccess ? ButtonStyle.Danger : ButtonStyle.Primary),
+      ),
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          isOwnTasksOnly
+            ? '🪪 **Restricted to assigned tasks** — members with only this role can only complete, edit, delete, or unassign tasks assigned to them.'
+            : 'Restrict members to acting only on tasks assigned to them (complete, edit, delete, unassign).',
+        ),
+      )
+      .setButtonAccessory(
+        new ButtonBuilder()
+          .setCustomId(`perm-owntasks:${roleId}`)
+          .setLabel(isOwnTasksOnly ? 'Allow All Tasks' : 'Restrict To Assigned')
+          .setStyle(isOwnTasksOnly ? ButtonStyle.Danger : ButtonStyle.Primary)
+          .setDisabled(isAllAccess),
       ),
     new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
     new TextDisplayBuilder().setContent(
@@ -282,6 +298,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
       (i.customId === `perm-toggle:${roleId}` ||
        i.customId === `perm-remove-role:${roleId}` ||
        i.customId === `perm-allaccess:${roleId}` ||
+       i.customId === `perm-owntasks:${roleId}` ||
        i.customId === 'perm-back'),
     max: 1,
     time: COLLECTOR_TIMEOUT,
@@ -300,6 +317,20 @@ async function showRoleDetail(interaction: any, roleId: string) {
         await ServerConfig.findOneAndUpdate(
           { guildId },
           { $addToSet: { allAccessRoleIds: roleId } },
+          { upsert: true },
+        );
+      }
+      await showRoleDetail(i, roleId);
+    } else if (i.customId === `perm-owntasks:${roleId}`) {
+      if (isOwnTasksOnly) {
+        await ServerConfig.findOneAndUpdate(
+          { guildId },
+          { $pull: { ownTasksOnlyRoleIds: roleId } },
+        );
+      } else {
+        await ServerConfig.findOneAndUpdate(
+          { guildId },
+          { $addToSet: { ownTasksOnlyRoleIds: roleId } },
           { upsert: true },
         );
       }

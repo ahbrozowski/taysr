@@ -8,6 +8,7 @@ export interface IServerConfig extends Document {
   reminderCadence: string[];
   lockdownEnabled: boolean;
   allAccessRoleIds: string[];
+  ownTasksOnlyRoleIds: string[];
 }
 
 const serverConfigSchema = new Schema<IServerConfig>({
@@ -18,6 +19,7 @@ const serverConfigSchema = new Schema<IServerConfig>({
   reminderCadence: { type: [String], default: [] },
   lockdownEnabled: { type: Boolean, default: false },
   allAccessRoleIds: { type: [String], default: [] },
+  ownTasksOnlyRoleIds: { type: [String], default: [] },
 }, {
   timestamps: true,
 });

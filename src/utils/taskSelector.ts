@@ -193,10 +193,14 @@ export async function createTaskSelector(
  * Convenience wrapper: task selector pre-configured for completing tasks.
  * Used by the /complete command.
  */
-export async function createTaskListPage(interaction: ChatInputCommandInteraction | ButtonInteraction) {
+export async function createTaskListPage(
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+  taskFilter?: Record<string, any>,
+) {
   await createTaskSelector(interaction, {
     actionLabel: 'Complete',
     guildId: interaction.guildId || undefined,
+    taskFilter,
     onSelect: async (task, i) => {
       task.status = 'complete';
       await task.save();

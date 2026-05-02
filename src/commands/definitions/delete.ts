@@ -8,6 +8,7 @@ import { Command } from '../registry';
 import { createTaskSelector } from '../../utils/taskSelector';
 import { updatePinnedTaskList, updateGoalPinnedList } from '../../utils/taskList';
 import { cancelRemindersForTask } from '../../utils/reminders';
+import { isRestrictedToOwnTasks } from '../../utils/permissions';
 import { Task } from '../../models';
 
 export const deleteCommand: Command = {
@@ -26,9 +27,14 @@ export const deleteCommand: Command = {
   },
 
   execute: async (interaction: ChatInputCommandInteraction | ButtonInteraction) => {
+    const taskFilter = (await isRestrictedToOwnTasks(interaction, 'delete'))
+      ? { assigneeId: interaction.user.id }
+      : undefined;
+
     await createTaskSelector(interaction, {
       actionLabel: 'Delete',
       guildId: interaction.guildId || undefined,
+      taskFilter,
       onSelect: async (task, i) => {
         const taskId = task.taskId;
         const goalId = task.goalId;
