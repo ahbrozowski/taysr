@@ -7,7 +7,9 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "reset-counter": "tsx scripts/reset-task-counter.ts"
+    "reset-counter": "tsx scripts/reset-task-counter.ts",
+    "seed-tasks": "tsx scripts/seed-tasks.ts",
+    "clear-seed-tasks": "tsx scripts/clear-seed-tasks.ts"
   },
   "engines": {
     "node": ">=20.19.0"
