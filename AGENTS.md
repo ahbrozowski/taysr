@@ -124,17 +124,31 @@ Extract it. Parameterize it. The owner hates duplicate code.
 
 ### Data models (Mongoose)
 - `Task` — taskId (T-001), title, dueAt, goalId, assigneeId, guildId, status
-- `Goal` — goalId (G-001), name, guildId, channelId, messageId, status
-- `Bug` — bugId (B-001), title, description, severity, reporterId, guildId, status
+- `Goal` — goalId (G-001), name, guildId, channelId, messageIds[], status
+- `Bug` — bugId (B-001), title, description, severity, reporterId, guildId, status, resolvedBy, resolvedAt
 - `Reminder` — taskId, guildId, assigneeId, offset, sendAt, status (compound unique on taskId+offset)
 - `Counter` — atomic guild-scoped ID generation
-- `ServerConfig` — guild settings (channels, timezone, reminder cadence)
-- `CommandPermission` — role-based command access
+- `ServerConfig` — guild settings: taskListChannelId, taskListMessageIds[], timezone, reminderCadence[], lockdownEnabled, allAccessRoleIds[], ownTasksOnlyRoleIds[]
+- `CommandPermission` — role-based command access (per guild + command)
 
 ### Reminder scheduler (`src/utils/reminders.ts`)
 - `scheduleRemindersForTask(task)` — call after any mutation that affects assignee/dueAt/status; idempotent upsert
 - `cancelRemindersForTask(taskMongoId)` — call after complete/delete/unassign
 - `processDueReminders(client)` — DMs assignees, marks sent/failed; runs every 60s via `startReminderScheduler`
+
+### Permissions (`src/utils/permissions.ts`)
+- `checkCommandPermission(interaction, metadata)` — order: alwaysPublic → admin → all-access role → role grant → lockdown deny / public allow
+- `getAccessibleCommands(member, guildId, names)` — same logic batched for the picker
+- `isRestrictedToOwnTasks(interaction, commandName)` — true when user has only ownTasksOnly role(s) granting this command; merge `{ assigneeId: userId }` into the taskFilter
+
+### Pinned task list (`src/utils/taskList.ts`)
+- Multi-message: chunks content under 4000 chars per Components V2 message, labels each "Page X of N"
+- Pin order: edit-in-place when chunk count unchanged; on grow, unpin all and re-pin in reverse so Page 1 ends up at top
+- Notifications suppressed: `MessageFlags.SuppressNotifications` on send + delete the auto-generated `ChannelPinnedMessage` system notification
+
+### Datetime (`src/utils/datetime.ts`)
+- luxon-based parser: `parseDateTimeInZone(input, timezone)` interprets `YYYY-MM-DD HH:mm` in the configured server timezone and rejects past instants
+- `formatDateTimeInZone(date, timezone)` for `/edit` modal pre-fill
 
 ### ID generation
 - `generateTaskId(guildId)` → `T-001`, `T-002`, ...
@@ -156,8 +170,12 @@ Extract it. Parameterize it. The owner hates duplicate code.
 ## Implemented commands
 `/taysr`, `/help`, `/create`, `/complete`, `/edit`, `/delete`, `/list`,
 `/assign`, `/take`, `/unassign`, `/goal`, `/refresh`,
-`/bug-report`, `/bugs`,
-`/settings`, `/permissions`, `/set-channel`, `/set-timezone`, `/set-reminders`
+`/bug-report`,
+`/settings`, `/permissions`, `/set-manager-role`,
+`/set-channel`, `/set-timezone`, `/set-reminders`
 
 ## Planned commands
-_All previously planned commands have shipped._
+_All previously planned commands have shipped — `planned.ts` exports an empty list._
+
+## Project status
+Stable. Future ideas live in the project memory under "Web translation idea" — not committed work, just an option.

@@ -1,5 +1,7 @@
 # Development Plan
 
+> **Status: All milestones in this plan have shipped.** This document is preserved as a record of the original scope. For the current state, see [README.md](README.md) and [SPEC.md](SPEC.md).
+
 ## Goals
 - Deliver a Discord bot that matches SPEC.md and uses component-driven flows for all `/taysr` commands.
 - Provide a reliable pinned task list, reminders, and role-based permissions per server.

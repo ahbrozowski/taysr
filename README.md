@@ -1,21 +1,21 @@
 # Taysr - Discord Task Management Bot
 
-A sophisticated Discord bot for managing tasks and goals within your server. Taysr provides an intuitive slash command interface with interactive modals, paginated lists, and automatically-updated pinned task boards.
+**Status: Shipped — all planned features are implemented.** A Discord bot for managing tasks, goals, and reminders within your server. Taysr provides an interactive slash command interface with modals, paginated lists, automatically-updated pinned task boards, and DM reminders driven by a configurable cadence.
 
 ## Features
 
-- **Goal System** - Organize tasks under goals/projects; goals can be linked to channels for focused pinned task lists
-- **Task Creation** - Create tasks with titles, due dates, notes, and optional assignees through interactive modal forms
-- **Goal Picker** - Select an existing goal, create a new one, or skip when creating tasks
-- **Task Completion** - Mark tasks complete with paginated selection lists and filtering by goal/assignee
-- **Pinned Task Lists** - Automatically-maintained pinned messages showing all active tasks grouped by goal
-- **Goal-Specific Channels** - Link goals to channels for focused pinned lists that auto-update
-- **Auto-Generated IDs** - Guild-scoped task IDs (T-001) and goal IDs (G-001) with atomic counters
-- **Interactive UI** - Modern Discord Components V2 (buttons, select menus, modals) for seamless interaction
-- **Guild Isolation** - Tasks, goals, and configurations are scoped per Discord server
-- **Task Assignment** - Assign tasks to specific users during creation
-- **Flexible Configuration** - Set which channel displays the pinned task list
-- **MongoDB Persistence** - Reliable database storage with Mongoose ORM
+- **Goal System** - Organize tasks under goals; goals can be linked to channels for focused pinned task lists
+- **Task Lifecycle** - Create, edit, complete, delete, assign, take, unassign — all through interactive flows
+- **Pinned Task Lists** - Automatically-maintained pinned messages, split across multiple messages when content exceeds Discord's 4000-char component limit, with correct pin ordering preserved
+- **Silent Updates** - Pinned messages send with `SuppressNotifications` and Discord's auto-generated "X pinned a message" system messages are deleted, so the channel doesn't ding members on every task update
+- **DM Reminders** - Configurable cadence (e.g., `7d,3d,1d,4h,1h`) DMs assignees ahead of due dates; reminders auto-cancel on complete/delete/unassign
+- **Server Timezone** - Due dates parsed in the configured IANA timezone; `/set-timezone` is load-bearing
+- **Permission System** - Per-role command access via `/permissions`, plus a lockdown toggle (deny by default), per-role all-access bypass, and per-role "restrict to assigned tasks" mode
+- **Bug Reports** - `/bug-report` captures bug submissions with severity; the bot also posts a public summary to the configured task channel
+- **Auto-Generated IDs** - Guild-scoped IDs for tasks (T-001), goals (G-001), and bugs (B-001) via atomic counters
+- **Discord Components V2** - Modern interactive buttons, select menus, modals throughout
+- **Guild Isolation** - All entities scoped per server
+- **MongoDB Persistence** - Mongoose ORM with proper indexes
 
 ## Commands
 
@@ -36,9 +36,9 @@ A sophisticated Discord bot for managing tasks and goals within your server. Tay
 | `/goal` | 🎯 | Create a new goal with optional channel linking |
 | `/refresh` | 🔄 | Rebuild the pinned task list from database |
 | `/bug-report` | 🐛 | Report a bug with title, description, and severity |
-| `/bugs` | 🪲 | View, filter, and resolve bug reports |
 | `/settings` | ⚙️ | Manage server settings (admin only) |
-| `/permissions` | 🔒 | Manage which roles can use each command (admin only) |
+| `/permissions` | 🔒 | Manage role-based command access, lockdown, all-access, and restrict-to-assigned (admin only) |
+| `/set-manager-role` | 🛡️ | Bulk-grant a role access to the preset manager command list (admin only) |
 | `/set-channel` | 📌 | Set a channel for the task list or link a goal to a channel |
 | `/set-timezone` | 🌍 | Configure server timezone for due dates |
 | `/set-reminders` | ⏰ | Configure reminder cadence for upcoming tasks |
@@ -157,41 +157,44 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_APPLICATION_ID&permissio
 ```
 taysr/
 ├── src/
-│   ├── index.ts                 # Bot entry point and event handlers
-│   ├── constants.ts             # Shared constants and configuration
+│   ├── index.ts                 # Bot entry point, scheduler bootstrap, graceful shutdown
+│   ├── constants.ts             # Shared constants
 │   ├── commands/
-│   │   ├── index.ts             # Command module exports
-│   │   ├── types.ts             # Command handler type definitions
-│   │   ├── registry.ts          # CommandRegistry singleton and Command interface
-│   │   ├── executor.ts          # Command execution logic
-│   │   └── definitions/         # Individual command implementations
-│   │       ├── complete.ts
-│   │       ├── create.ts
-│   │       ├── goal.ts
-│   │       ├── help.ts
-│   │       ├── assign.ts
-│   │       ├── delete.ts
-│   │       ├── edit.ts
-│   │       ├── planned.ts       # Planned command definitions
-│   │       ├── refresh.ts
-│   │       ├── set-channel.ts
-│   │       ├── take.ts
-│   │       ├── taysr.ts
-│   │       └── unassign.ts
+│   │   ├── index.ts             # Command registration
+│   │   ├── registry.ts          # CommandRegistry singleton + Command interface
+│   │   ├── executor.ts          # Routing + permission gate
+│   │   └── definitions/
+│   │       ├── assign.ts        bug-report.ts  complete.ts   create.ts
+│   │       ├── delete.ts        edit.ts        goal.ts       help.ts
+│   │       ├── list.ts          permissions.ts planned.ts    refresh.ts
+│   │       ├── set-channel.ts   set-manager-role.ts
+│   │       ├── set-reminders.ts set-timezone.ts
+│   │       ├── settings.ts      take.ts        taysr.ts      unassign.ts
 │   ├── models/
-│   │   ├── index.ts             # MongoDB connection and initialization
-│   │   ├── Task.ts              # Task schema and model
-│   │   ├── Goal.ts              # Goal schema (for task grouping)
-│   │   ├── Reminder.ts          # Reminder schema (infrastructure)
-│   │   └── ServerConfig.ts      # Server configuration schema
+│   │   ├── index.ts             # MongoDB connection + model exports
+│   │   ├── Bug.ts
+│   │   ├── CommandPermission.ts
+│   │   ├── Goal.ts
+│   │   ├── Reminder.ts
+│   │   ├── ServerConfig.ts
+│   │   └── Task.ts
 │   └── utils/
-│       ├── client.ts            # Global Discord client instance
-│       ├── commandName.ts       # Command name utilities
-│       ├── commandPicker.ts     # Interactive command selection UI
-│       ├── messages.ts          # Message formatting utilities
-│       ├── taskId.ts            # Atomic task ID generation
-│       ├── taskList.ts          # Pinned task list management
-│       └── taskSelector.ts      # Paginated task selection UI
+│       ├── client.ts            # Global Discord client accessor
+│       ├── commandName.ts
+│       ├── commandPicker.ts     # /help and /taysr picker UI
+│       ├── datetime.ts          # Timezone-aware date parse + format (luxon)
+│       ├── messages.ts
+│       ├── permissions.ts       # Permission rules + role-restriction helpers
+│       ├── reminders.ts         # Reminder scheduling, cancellation, tick loop
+│       ├── taskId.ts            # Atomic ID generation
+│       ├── taskList.ts          # Multi-message pinned list rendering + sync
+│       └── taskSelector.ts      # Reusable paginated task picker
+├── scripts/
+│   ├── reset-task-counter.ts            # Reset T-### counter for a guild
+│   ├── seed-tasks.ts                    # Bulk-create test tasks for chunking tests
+│   ├── clear-seed-tasks.ts              # Delete the seeded test tasks
+│   ├── drop-stale-reminder-index.ts     # One-shot: drop legacy reminderId_1 index
+│   └── migrate-pinned-messages.ts       # One-shot: legacy single-msg → array fields
 ├── .env                         # Environment variables (create this)
 ├── package.json
 └── tsconfig.json
@@ -224,11 +227,13 @@ The bot uses a modular command system with a central registry pattern:
 
 **ServerConfig Model** ([src/models/ServerConfig.ts](src/models/ServerConfig.ts))
 - `guildId` - Discord server ID
-- `taskListChannelId` - Channel for pinned task list
-- `taskListMessageId` - Message ID of pinned list
-- `timezone` - Server timezone (planned)
-- `reminderCadence` - Reminder frequency (planned)
-- `adminRoleIds` - Admin role configuration (planned)
+- `taskListChannelId` - Channel for the pinned task list
+- `taskListMessageIds` - Array of pinned message IDs (one per page when chunked)
+- `timezone` - IANA server timezone, used to parse modal date input
+- `reminderCadence` - Array of offset strings (e.g., `['7d','3d','1d']`) controlling reminder DMs
+- `lockdownEnabled` - When true, commands without a `CommandPermission` doc deny by default
+- `allAccessRoleIds` - Roles flagged to bypass every permission check
+- `ownTasksOnlyRoleIds` - Roles whose holders can only act on tasks assigned to themselves (for `/complete`, `/edit`, `/delete`, `/unassign`)
 
 **Goal Model** ([src/models/Goal.ts](src/models/Goal.ts))
 - `goalId` - Human-readable ID (G-001, G-002, etc.)
@@ -237,8 +242,13 @@ The bot uses a modular command system with a central registry pattern:
 - `description` - Optional goal description
 - `status` - Goal status (active, archived)
 - `channelId` - Optional linked channel for goal-specific pinned list
-- `messageId` - Pinned message ID in linked channel
+- `messageIds` - Array of pinned message IDs in the linked channel (chunked when long)
 - `createdAt`, `updatedAt` - Timestamps
+
+**CommandPermission Model** ([src/models/CommandPermission.ts](src/models/CommandPermission.ts))
+- `guildId` - Discord server ID
+- `commandName` - Slash command name (without leading slash)
+- `roleIds` - Roles allowed to use this command (compound unique on `guildId + commandName`)
 
 **Bug Model** ([src/models/Bug.ts](src/models/Bug.ts))
 - `bugId` - Human-readable ID (B-001, B-002, etc.)
@@ -282,7 +292,30 @@ The pinned task list automatically updates when:
 - Goals are linked/unlinked from channels
 - The `/refresh` command is executed
 
-The main list is stored as a pinned message in the configured channel, grouped by goal with "Uncategorized" last. Goals can also have their own pinned lists in linked channels, showing only tasks for that goal.
+**Multi-message chunking:** when a list exceeds Discord's 4000-character per-component limit, it splits across multiple pinned messages labelled "Page X of N". On growth, the bot unpins all and re-pins in reverse so Page 1 ends up at the top of the pin list; on edit-in-place (no count change), no pin churn occurs.
+
+**Silent updates:** new pinned messages use `MessageFlags.SuppressNotifications`, and the auto-generated "X pinned a message" system message is deleted after each pin so the channel doesn't ding on every task change.
+
+Goals can also have their own pinned lists in linked channels, showing only tasks for that goal.
+
+### Permissions and Lockdown
+
+Open `/permissions` to manage who can use what. The model:
+
+- **Discord administrators** always bypass every check.
+- **All-access roles** (per-role toggle) bypass too — useful for "manager" roles that should get every command (including ones added later).
+- **Role grants** (per-command multi-select): grant specific roles access to specific commands.
+- **Lockdown** (server-wide toggle): when on, commands without an explicit grant deny by default. When off, they're public.
+- **Restrict to assigned tasks** (per-role toggle): members with only this role can only complete/edit/delete/unassign tasks assigned to them. The picker hides the "Filter by assignee" select for these users since it would be meaningless.
+- `/help`, `/taysr`, `/list`, and `/bug-report` are tagged `alwaysPublic` and bypass the permission system entirely.
+
+### Reminders
+
+Configure cadence with `/set-reminders` (presets or a custom comma-separated list of offsets like `7d,3d,1d,4h,1h`). The bot's scheduler ticks every 60 seconds and DMs assignees at each `dueAt - offset`. Reminders are scheduled when a task is created/edited/assigned/taken and cancelled when it's completed, deleted, or unassigned.
+
+### Server Timezone
+
+Due-date input in modals is parsed in the configured server timezone (`/set-timezone`, IANA names like `America/New_York`). Pre-fill in `/edit` formats the existing due date back into the same zone so users see what they originally typed.
 
 ## Development
 
@@ -369,21 +402,29 @@ When modifying Mongoose models:
 - Use `npm run reset-counter` to reset the task counter for a guild
 - Check MongoDB connection for counter document integrity
 
+**Pinned List Stuck or Old Schema Orphans**
+- If upgrading from a single-pinned-message schema, run `npx tsx scripts/migrate-pinned-messages.ts` once
+- If the reminder collection has an old `reminderId_1` unique index, run `npx tsx scripts/drop-stale-reminder-index.ts`
+- `/refresh` rebuilds the pinned list from the DB
+
+## Dev Helpers
+
+```bash
+# Bulk-create tasks to exercise the multi-message chunking
+SEED_GUILD_ID=<guild> SEED_COUNT=80 npm run seed-tasks
+
+# Tear them back down
+npm run clear-seed-tasks
+```
+
 ## Roadmap
 
-### Upcoming Features
+Possible future direction (not committed):
 
-- **Recurring Tasks** - Support for repeating tasks
-- **Task Templates** - Pre-defined task templates
-- **Analytics** - Task completion statistics and reports
-
-### Infrastructure Improvements
-
-- Migration system for database schema changes
-- Comprehensive error logging
-- Unit and integration tests
-- Command usage analytics
-- Performance monitoring
+- Recurring tasks
+- Task templates
+- Analytics dashboards
+- Companion web app (Discord OAuth, sharing the same MongoDB)
 
 ## License
 

@@ -190,10 +190,13 @@ pm2 stop taysr
 # Restart bot
 pm2 restart taysr
 
-# Update bot after code changes
+# Update bot after code changes (force-sync to remote so local file
+# mutations from previous deploys never block the pull)
 cd ~/taysr
-git pull
-npm install
+git fetch origin
+git reset --hard origin/main
+git clean -fd -e .env -e node_modules
+npm ci
 npm run build
 pm2 restart taysr
 ```
@@ -216,11 +219,15 @@ In your GitHub repo settings → **Secrets and variables** → **Actions**, add:
 This repo includes a GitHub Actions workflow at `.github/workflows/deploy.yml` that runs:
 ```bash
 cd ~/taysr
-git pull
-npm install
+git fetch origin
+git reset --hard origin/main
+git clean -fd -e .env -e node_modules
+npm ci
 npm run build
 pm2 restart taysr
 ```
+
+`reset --hard` + `npm ci` ensures the VM always lands on the exact remote state. Earlier deploys used `git pull` + `npm install`, which would fail when `npm install` had mutated `package-lock.json` between deploys.
 
 ---
 
@@ -296,7 +303,7 @@ pm2 monit
 
 ## Part 9: Updating Your Bot
 
-When you push changes to GitHub:
+Pushes to `main` auto-deploy via GitHub Actions. To deploy manually:
 
 ```bash
 # SSH into your VM
@@ -305,11 +312,13 @@ gcloud compute ssh taysr-1 --zone=us-central1-a
 # Navigate to project
 cd ~/taysr
 
-# Pull latest changes
-git pull
+# Force-sync to remote
+git fetch origin
+git reset --hard origin/main
+git clean -fd -e .env -e node_modules
 
-# Install any new dependencies
-npm install
+# Deterministic install
+npm ci
 
 # Rebuild
 npm run build

@@ -1,5 +1,7 @@
 # Taysr Discord Bot Spec
 
+> **Status: shipped.** Every command listed under "Planned commands" historically has been implemented; that section is now empty. Schema sections describe the current data model.
+
 ## Overview
 - Purpose: task management for a roller derby team in Discord.
 - Interaction model: independent top-level slash commands (e.g., `/create`, `/complete`, `/set-channel`), each registered separately with Discord.
@@ -100,15 +102,29 @@ On startup:
 4. Commands are registered guild-scoped in dev (when `DISCORD_DEV_GUILD_ID` is set), globally in production.
 
 ## Roles and permissions
-- **Fully customizable per-command role system** — any Discord role can be assigned to any command, with no limits on roles or commands.
-- **Discord admins always bypass** — users with the Discord `Administrator` permission have full access to every command regardless of configuration.
-- **Public by default** — commands with no role restrictions are open to everyone.
-- **Dedicated `CommandPermission` collection** — stores per-guild, per-command role mappings in MongoDB.
-- `/settings` → Permissions allows admins to configure which roles can use each command.
-- `/set-manager-role` is a convenience shortcut that restricts a preset list of manager commands to a chosen role in one action.
-- The **command picker** hides commands the user doesn't have access to.
+- **Fully customizable per-command role system** — any Discord role (including `@everyone`) can be granted access to any command via `/permissions`.
+- **Always-public commands** (`/help`, `/taysr`, `/list`, `/bug-report`) are tagged `alwaysPublic: true` and bypass every permission check.
+- **Discord admins always bypass** the rest of the chain.
+- **All-access roles** (`ServerConfig.allAccessRoleIds`) — per-role toggle in `/permissions`. Members with any all-access role bypass all per-command checks, including ones added later.
+- **Lockdown** (`ServerConfig.lockdownEnabled`) — server-wide toggle in `/permissions`. When on, commands without an explicit `CommandPermission` doc deny by default. When off, they default to public.
+- **Restrict to assigned tasks** (`ServerConfig.ownTasksOnlyRoleIds`) — per-role toggle. Members whose only access path to a command goes through ownTasksOnly roles can only act on tasks assigned to themselves (`/complete`, `/edit`, `/delete`, `/unassign`); the picker hides the assignee filter for them.
+- **`CommandPermission` collection** — `(guildId, commandName)` compound key with allowed `roleIds[]`.
+- `/permissions` allows admins to manage all of the above in one UI.
+- `/set-manager-role` is a convenience shortcut that bulk-grants a role access to a preset list of manager commands.
+- The **command picker** filters out commands the user doesn't have access to via `getAccessibleCommands` (same logic as `checkCommandPermission`).
 - The **executor** checks permissions before every command execution.
-- Anyone can view tasks via the pinned list or `/list`.
+
+### Permission check order
+1. `metadata.alwaysPublic` → allow
+2. Discord `Administrator` permission → allow
+3. Member has any role in `ServerConfig.allAccessRoleIds` → allow
+4. `CommandPermission` doc exists for this command with non-empty `roleIds`:
+   - Member has any matching role → allow
+   - Otherwise → deny (with the list of required roles in the reason)
+5. No doc + lockdown ON → deny
+6. No doc + lockdown OFF → allow
+
+`isRestrictedToOwnTasks` runs after the allow decision: if the user has any `ownTasksOnly` role and no other unrestricted access path for this command, the caller merges `{ assigneeId: userId }` into the task filter.
 
 ## Component-driven input
 - All commands respond with Discord Components V2 (`TextDisplayBuilder`, `SectionBuilder`, `SeparatorBuilder`, buttons, modals).
@@ -291,120 +307,105 @@ On startup:
   - Shows confirmation with list of restricted commands and a note about `/settings` for fine-tuning.
 - Requires guild context.
 
-## Planned commands
-
-The following commands are registered in the command registry but **not** deployed as Discord slash commands. They appear as "Coming Soon" in the command picker.
-
 ### /edit
-- **Status:** Planned
-- Inputs:
-  - task_id (required)
-  - title (optional)
-  - due (optional)
-  - notes (optional)
-  - assignee (optional)
-  - goal (optional)
+- **Status:** Implemented
+- Inputs (collected via task picker + goal picker + modal):
+  - task selection (required)
+  - goal (optional, can change/set/clear/create new)
+  - title, due date/time, notes (modal, pre-filled with current values)
+  - assignee (optional, change/keep/remove)
 - Behavior:
-  - Updates task fields.
-  - Goal may be set, changed, or cleared.
-  - Reschedules reminders if assignee added/changed or due changes.
-  - Updates pinned list message.
-- Component flow:
-  - Step 1: Task picker (String Select of open tasks).
-  - Step 2: Goal picker (String Select of existing goals + "New goal..." + "No goal").
-  - Step 3: If "New goal..." selected, modal to enter goal name.
-  - Step 4: Modal with editable Title, Due date/time, Notes.
-  - Step 5 (optional): User Select to change assignee.
+  - Reuses `createTaskSelector` for task selection.
+  - Goal picker offers existing goals + "New goal..." + "No goal".
+  - Modal pre-fills the existing due date in the configured server timezone.
+  - Reschedules reminders on save (cancels stale ones, creates new ones for the new due/assignee).
+  - Updates main and goal-specific pinned task lists.
+- Requires guild context.
 
 ### /delete
-- **Status:** Planned
-- Inputs:
-  - task_id (required)
+- **Status:** Implemented
+- Inputs (via task picker):
+  - task selection (required)
 - Behavior:
-  - Deletes task.
-  - Cancels future reminders.
-  - Updates pinned list message.
-- Component flow:
-  - Step 1: Task picker (String Select of open tasks).
-  - Step 2: Confirm button.
+  - Reuses `createTaskSelector` with the "Delete" action label.
+  - Deletes the task, cancels its pending reminders, updates pinned lists.
+- Requires guild context.
 
 ### /list
-- **Status:** Planned
-- Inputs:
-  - status (optional: open, complete, all)
-  - assignee (optional: user or "unassigned")
-  - goal (optional: existing goal or "uncategorized")
+- **Status:** Implemented
+- Inputs (via component-driven filters):
+  - status (open / complete / all — String Select)
+  - goal (String Select of active goals)
+  - assignee (User Select)
 - Behavior:
-  - Returns an ephemeral list summary.
-  - Pinned list remains the canonical view.
-- Component flow:
-  - Optional filters via String Select (status, goal) and User Select (assignee).
+  - Read-only paginated viewer; the pinned list remains the canonical board.
+  - Status defaults to "open"; navigation via Previous/Next buttons.
+  - Tagged `alwaysPublic` so anyone in the guild can read.
+- Requires guild context.
 
 ### /bug-report
-- **Status:** Planned
+- **Status:** Implemented
 - Inputs (collected via modal):
-  - title (required, max 100 chars)
-  - description (required, max 1000 chars)
-  - severity (optional: low, medium, high, critical — via String Select)
+  - title (required, max 120 chars)
+  - description (optional, max 1500 chars)
+  - severity (selected after modal: low / medium / high / critical)
 - Behavior:
-  - Opens a modal to collect bug details (title, description).
-  - Optionally shows a severity picker after the modal.
-  - Creates a BugReport in the database with an atomically generated guild-scoped bug ID (B-001, B-002, etc.).
-  - Posts a summary in the configured task list channel (or replies ephemerally if no channel is set).
-  - Bugs are viewable via `/bugs`.
+  - Modal collects title + description, then a severity String Select.
+  - Creates a Bug document with a guild-scoped ID (B-001, B-002, ...).
+  - Posts a public summary in the configured task list channel (no-op if no channel is configured).
+  - Tagged `alwaysPublic`.
 - Requires guild context.
-- Component flow:
-  - Step 1: Modal with Title and Description.
-  - Step 2 (optional): Severity picker — String Select with Low / Medium / High / Critical.
-
-### /bugs
-- **Status:** Planned
-- Inputs:
-  - status (optional: open, resolved, all)
-  - severity (optional: low, medium, high, critical)
-  - reporter (optional: User Select)
-- Behavior:
-  - Shows a paginated, filterable list of bug reports.
-  - Uses the reusable task selector pattern with "View" or "Resolve" action buttons.
-  - Clicking "Resolve" marks the bug as resolved.
-- Requires guild context.
-- Component flow:
-  - Step 1: Paginated bug list with filters and action buttons.
 
 ### /set-timezone
-- **Status:** Planned
+- **Status:** Implemented
 - Inputs:
-  - timezone (required, IANA name)
+  - common-timezone select (preset IANA names)
+  - custom IANA name via modal
 - Behavior:
-  - Sets the server timezone used for due date parsing and scheduling.
-- Component flow:
-  - Modal text input for timezone name, with an optional String Select of common timezones.
+  - Validates IANA names with `Intl.DateTimeFormat`.
+  - Writes to `ServerConfig.timezone`. Used when parsing due-date input in `/create` and `/edit` modals via luxon.
+- Requires guild context.
 
 ### /set-reminders
-- **Status:** Planned
+- **Status:** Implemented
 - Inputs:
-  - cadence (required; e.g., "7d,3d,1d,4h,1h")
+  - preset cadence select (off / 1d / 1d-1h / 3d-1d-1h / 7d-3d-1d-4h-1h)
+  - custom comma-separated offsets via modal (e.g., `7d,3d,1d,4h,1h`)
 - Behavior:
-  - Sets server reminder cadence for all tasks.
-- Component flow:
-  - Modal text input for cadence.
+  - Parses and normalizes offsets supporting `d`, `h`, `m` units.
+  - Writes to `ServerConfig.reminderCadence`. The reminder scheduler uses this when scheduling reminders for tasks.
+- Requires guild context.
+
+### /set-manager-role
+- **Status:** Implemented
+- Inputs (Role Select):
+  - role (required)
+- Behavior:
+  - Bulk-grants the chosen role access to a preset list of manager commands: `refresh`, `assign`, `unassign`, `delete`, `edit`, `goal`.
+  - Additive — running with a different role grants both roles access.
+  - `setDefaultMemberPermissions(Administrator)` hides it from non-admins in the Discord UI.
+- Requires guild context.
+
+## Planned commands
+
+_All previously planned commands have shipped. `planned.ts` exports an empty array._
 
 ## Task list behavior
-- Single pinned message in the configured channel (main task list).
-- Updated on every task change (create, complete, assign, edit, delete).
+- Pinned messages in the configured channel (main task list).
+- Updated on every task mutation (create, complete, assign, edit, delete, take, unassign).
 - Can be fully rebuilt from the database via `/refresh`.
 - Shows only open tasks (including unassigned).
 - Grouped by goal name, with "Uncategorized" last.
 - Sorted by due date within each goal (soonest first).
-- Compact format per task: `taskId • title • assignee • due date`.
-- Respects Discord’s 40-component limit.
+- Compact format per task: `**title** · assignee · <relative timestamp>`.
+- **Multi-message chunking** — when content exceeds Discord's 4000-char Components V2 cap, the list splits across multiple pinned messages labelled "Page X of N". `ServerConfig.taskListMessageIds` and `Goal.messageIds` are arrays.
+- **Pin ordering** — when chunk count grows, the bot unpins all pinned messages and re-pins them in reverse so Page 1 ends up most-recently pinned (top of the pin list). Edit-in-place when count is unchanged; delete excess on shrink (no re-pin needed).
+- **Notification suppression** — new pinned messages send with `MessageFlags.SuppressNotifications`, and Discord's auto-generated `ChannelPinnedMessage` notification is fetched and deleted after each pin.
 - Each task entry includes:
-  - Task ID (guild-scoped, e.g., T-001)
   - Title
   - Assignee (or "Unassigned")
-  - Due date/time (Discord timestamp format)
-  - Optional notes or short summary
-- The pinned message also includes a short "How to use" guide with a `/help` example.
+  - Due date/time (Discord timestamp format, relative)
+- The last page also includes a short "How to use" footer.
 
 ### Goal-specific pinned lists
 - Goals can optionally be linked to a specific channel via `/goal` or `/set-channel #channel GoalName`.
@@ -466,19 +467,25 @@ Notes: Confirm with coaches before posting
 ```
 
 ## Reminder behavior
-- Reminders are only scheduled when a task has an assignee.
-- Reminder schedule is derived from the server cadence.
-- Reminders are canceled when a task is completed or deleted.
-- Reminders are sent via DM to the assignee.
+- Reminders are only scheduled when a task has an assignee, a future `dueAt`, and `status === 'open'`.
+- Cadence comes from `ServerConfig.reminderCadence`. Each offset string (`d`, `h`, `m`) becomes a `Reminder` document with `sendAt = dueAt - offset` and a snapshot of `assigneeId` at schedule time.
+- Reminders dedupe on `(taskId, offset)` via a compound unique index — re-scheduling a task safely upserts.
+- Reminders are cancelled (status → `canceled`) when the task is completed, deleted, unassigned, or its cadence is changed such that an offset is no longer valid.
+- The scheduler ticks every 60 seconds: it queries pending reminders with `sendAt <= now`, re-validates against the live task (still open, same assignee), DMs the assignee, and marks the reminder `sent` (or `failed` if the DM bounces).
+- Failed deliveries log an error to the console; they do not retry automatically.
+- Implementation: `src/utils/reminders.ts` (`scheduleRemindersForTask`, `cancelRemindersForTask`, `processDueReminders`, `startReminderScheduler`).
 
 ## Data model
 
 ### ServerConfig
 - guild_id (string, PK, Discord guild ID)
 - task_list_channel_id (string, nullable until set)
-- task_list_message_id (string, nullable until set)
-- timezone (string, IANA tz)
-- reminder_cadence (string or array of durations)
+- task_list_message_ids (array of strings, one per pinned page; empty until set)
+- timezone (string, IANA name; default `UTC`)
+- reminder_cadence (array of offset strings, e.g., `['7d','3d','1d','4h','1h']`)
+- lockdown_enabled (boolean; default false)
+- all_access_role_ids (array of role IDs; bypass every permission check)
+- own_tasks_only_role_ids (array of role IDs; restrict members to tasks assigned to themselves)
 
 ### CommandPermission
 - guild_id (string, part of compound PK)
@@ -488,13 +495,13 @@ Notes: Confirm with coaches before posting
 - If no document exists for a command, or role_ids is empty, the command is public
 
 ### Goal
-- goal_id (string, unique short ID)
+- goal_id (string, unique short ID, e.g., G-001)
 - guild_id (string, FK to ServerConfig)
 - name (string, unique per server, case-insensitive)
 - description (string, optional)
 - status (enum: active, archived)
 - channel_id (string, nullable; linked channel for goal-specific pinned list)
-- message_id (string, nullable; pinned message ID in linked channel)
+- message_ids (array of strings; pinned message IDs in linked channel — chunked when long)
 - created_at (timestamp)
 - updated_at (timestamp)
 
@@ -511,11 +518,11 @@ Notes: Confirm with coaches before posting
 - created_at (timestamp)
 - updated_at (timestamp)
 
-### BugReport
+### Bug
 - bug_id (string, unique short ID, guild-scoped, e.g., B-001)
 - guild_id (string, FK to ServerConfig)
 - title (string)
-- description (string)
+- description (string, optional)
 - severity (enum: low, medium, high, critical; default: medium)
 - reporter_id (string, Discord user ID)
 - status (enum: open, resolved)
@@ -525,9 +532,13 @@ Notes: Confirm with coaches before posting
 - updated_at (timestamp)
 
 ### Reminder
-- reminder_id (string, unique)
-- task_id (string, FK to Task)
-- send_at (timestamp, UTC)
+- task_id (string, Mongo ObjectId of the related Task in string form)
+- guild_id (string, FK to ServerConfig)
+- assignee_id (string, snapshot of who to DM when this fires)
+- offset (string, the cadence offset that scheduled this, e.g., `1d`)
+- send_at (timestamp, UTC; equal to `task.dueAt - offset`)
 - sent_at (timestamp, nullable)
-- channel_id (string, optional if DM-only)
-- status (enum: pending, sent, canceled)
+- status (enum: pending, sent, canceled, failed)
+- created_at (timestamp)
+- updated_at (timestamp)
+- Compound unique index on `(task_id, offset)` so rescheduling is idempotent.
