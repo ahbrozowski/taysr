@@ -24,7 +24,7 @@ const COLLECTOR_TIMEOUT = 120000;
 /** Get all guild commands that can have permissions configured */
 function getConfigurableCommands() {
   return commandRegistry.getImplemented()
-    .filter(c => c.metadata.requiresGuild)
+    .filter(c => c.metadata.requiresGuild && !c.metadata.alwaysPublic)
     .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
 }
 
