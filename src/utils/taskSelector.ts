@@ -35,7 +35,11 @@ export interface TaskSelectorOptions {
   guildId?: string;
 }
 
-async function showFilters(state: TaskSelectorState, guildId?: string) {
+async function showFilters(
+  _state: TaskSelectorState,
+  guildId?: string,
+  options?: TaskSelectorOptions,
+) {
   const components = [];
 
   const filter: any = {};
@@ -59,11 +63,17 @@ async function showFilters(state: TaskSelectorState, guildId?: string) {
     components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(goalSelect));
   }
 
-  const userSelect = new UserSelectMenuBuilder()
-    .setCustomId('users')
-    .setPlaceholder('Filter by assignee')
-    .setMaxValues(1);
-  components.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(userSelect));
+  // Skip the assignee filter when the caller has already pinned the
+  // assigneeId to a specific user (e.g. ownTasksOnly restriction) — the
+  // select would be meaningless because no other assignee can match.
+  const fixedAssignee = typeof options?.taskFilter?.assigneeId === 'string';
+  if (!fixedAssignee) {
+    const userSelect = new UserSelectMenuBuilder()
+      .setCustomId('users')
+      .setPlaceholder('Filter by assignee')
+      .setMaxValues(1);
+    components.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(userSelect));
+  }
 
   return components;
 }
@@ -133,7 +143,7 @@ async function render(state: TaskSelectorState, options: TaskSelectorOptions) {
   const parts = [];
 
   if (options.showFilters !== false) {
-    parts.push(...await showFilters(state, options.guildId));
+    parts.push(...await showFilters(state, options.guildId, options));
   }
 
   parts.push(...await showPaginatedTasks(state, options));
