@@ -14,7 +14,7 @@ export const completeCommand: Command = {
     emoji: '✅',
     description: 'Complete a task',
     implemented: true,
-    requiresGuild: false,
+    requiresGuild: true,
   },
 
   build: () => {
