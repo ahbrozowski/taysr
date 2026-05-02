@@ -9,6 +9,7 @@ export const helpCommand: Command = {
     description: 'Show help and available commands',
     implemented: true,
     requiresGuild: false,
+    alwaysPublic: true,
   },
 
   build: () => {

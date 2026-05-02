@@ -35,6 +35,7 @@ export const listCommand: Command = {
     description: 'List tasks with filters',
     implemented: true,
     requiresGuild: true,
+    alwaysPublic: true,
   },
 
   build: () => {

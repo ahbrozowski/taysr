@@ -36,6 +36,7 @@ export const bugReportCommand: Command = {
     description: 'Report a bug',
     implemented: true,
     requiresGuild: true,
+    alwaysPublic: true,
   },
 
   build: () => {

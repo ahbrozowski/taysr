@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import { CommandPermission } from '../models/CommandPermission';
 import { ServerConfig } from '../models/ServerConfig';
-import { CommandMetadata } from '../commands/registry';
+import { commandRegistry, CommandMetadata } from '../commands/registry';
 
 export interface PermissionCheckResult {
   allowed: boolean;
@@ -33,19 +33,31 @@ export async function checkCommandPermission(
     return { allowed: true };
   }
 
+  if (metadata.alwaysPublic) {
+    return { allowed: true };
+  }
+
   const member = interaction.member as GuildMember | null;
   if (!member) {
     return { allowed: false, reason: 'Could not resolve your server membership.' };
   }
 
+  const userTag = `${member.user?.tag ?? interaction.user.tag} (${interaction.user.id})`;
+
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+    console.error(`[perm] ${userTag} → /${metadata.name}: ALLOW (Discord admin)`);
     return { allowed: true };
   }
 
   const config = await ServerConfig.findOne({ guildId: interaction.guildId }).lean();
   const memberRoleIds = member.roles.cache.map(r => r.id);
+  // @everyone always applies — its role ID equals the guild ID
+  memberRoleIds.push(interaction.guildId);
+  const lockdown = config?.lockdownEnabled ?? false;
+  const allAccess = config?.allAccessRoleIds ?? [];
 
-  if (config?.allAccessRoleIds?.some(roleId => memberRoleIds.includes(roleId))) {
+  if (allAccess.some(roleId => memberRoleIds.includes(roleId))) {
+    console.error(`[perm] ${userTag} → /${metadata.name}: ALLOW (all-access role)`);
     return { allowed: true };
   }
 
@@ -56,6 +68,7 @@ export async function checkCommandPermission(
 
   if (perm && perm.roleIds && perm.roleIds.length > 0) {
     if (perm.roleIds.some(roleId => memberRoleIds.includes(roleId))) {
+      console.error(`[perm] ${userTag} → /${metadata.name}: ALLOW (role grant) memberRoles=[${memberRoleIds.join(',')}] allowed=[${perm.roleIds.join(',')}]`);
       return { allowed: true };
     }
 
@@ -66,19 +79,22 @@ export async function checkCommandPermission(
       })
       .join(', ');
 
+    console.error(`[perm] ${userTag} → /${metadata.name}: DENY (no matching role) memberRoles=[${memberRoleIds.join(',')}] allowed=[${perm.roleIds.join(',')}]`);
     return {
       allowed: false,
       reason: `You need one of these roles to use this command: ${roleNames}`,
     };
   }
 
-  if (config?.lockdownEnabled) {
+  if (lockdown) {
+    console.error(`[perm] ${userTag} → /${metadata.name}: DENY (lockdown, no perm doc) memberRoles=[${memberRoleIds.join(',')}]`);
     return {
       allowed: false,
       reason: 'Lockdown is enabled and this command has no roles configured. Ask an admin to grant access via `/permissions`.',
     };
   }
 
+  console.error(`[perm] ${userTag} → /${metadata.name}: ALLOW (public, lockdown=${lockdown}) memberRoles=[${memberRoleIds.join(',')}]`);
   return { allowed: true };
 }
 
@@ -91,12 +107,23 @@ export async function getAccessibleCommands(
   guildId: string,
   commandNames: string[],
 ): Promise<Set<string>> {
+  const accessible = new Set<string>();
+
+  // Always-public commands bypass everything
+  for (const name of commandNames) {
+    if (commandRegistry.get(name)?.metadata.alwaysPublic) {
+      accessible.add(name);
+    }
+  }
+
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
     return new Set(commandNames);
   }
 
   const config = await ServerConfig.findOne({ guildId }).lean();
   const memberRoleIds = member.roles.cache.map(r => r.id);
+  // @everyone always counts as a "role" the member has
+  memberRoleIds.push(guildId);
 
   if (config?.allAccessRoleIds?.some(roleId => memberRoleIds.includes(roleId))) {
     return new Set(commandNames);
@@ -110,10 +137,10 @@ export async function getAccessibleCommands(
     }
   }
 
-  const accessible = new Set<string>();
   const lockdown = config?.lockdownEnabled ?? false;
 
   for (const name of commandNames) {
+    if (accessible.has(name)) continue;
     const allowedRoles = permMap.get(name);
     if (allowedRoles) {
       if (allowedRoles.some(roleId => memberRoleIds.includes(roleId))) {

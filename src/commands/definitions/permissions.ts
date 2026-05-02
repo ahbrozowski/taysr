@@ -52,7 +52,10 @@ export const permissionsCommand: Command = {
 
 // ── Roles List (main view) ────────────────────────────────────────────
 
-async function showRolesList(interaction: ChatInputCommandInteraction | ButtonInteraction) {
+async function showRolesList(
+  interaction: ChatInputCommandInteraction | ButtonInteraction,
+  options: { refresh?: boolean } = {},
+) {
   const guildId = interaction.guildId!;
   const perms = await CommandPermission.find({ guildId }).lean();
   const config = await ServerConfig.findOne({ guildId }).lean();
@@ -107,7 +110,9 @@ async function showRolesList(interaction: ChatInputCommandInteraction | ButtonIn
 
     for (const [roleId, cmdNames] of roleMap) {
       const role = interaction.guild?.roles.cache.get(roleId);
-      const roleName = role ? `@${role.name}` : `*Deleted role*`;
+      const roleName = role
+        ? (role.name.startsWith('@') ? role.name : `@${role.name}`)
+        : `*Deleted role*`;
       const isAllAccess = allAccessRoleIds.has(roleId);
 
       let summary: string;
@@ -142,7 +147,18 @@ async function showRolesList(interaction: ChatInputCommandInteraction | ButtonIn
     new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(addRoleSelect),
   );
 
-  const message = await respondToInteraction(interaction, components, { fetchReply: true });
+  let message: any;
+  if (options.refresh) {
+    await (interaction as any).update({ components });
+    message = await (interaction as any).fetchReply();
+  } else {
+    message = await interaction.reply({
+      components,
+      flags: [MessageFlags.IsComponentsV2],
+      ephemeral: true,
+      fetchReply: true,
+    });
+  }
 
   const collector = message!.createMessageComponentCollector({
     filter: (i: any) =>
@@ -161,16 +177,9 @@ async function showRolesList(interaction: ChatInputCommandInteraction | ButtonIn
         { $set: { lockdownEnabled: !lockdown } },
         { upsert: true },
       );
-      await showRolesList(i);
+      await showRolesList(i, { refresh: true });
     } else if (i.customId === 'perm-add-role') {
       const roleId = i.values[0];
-
-      // Don't allow @everyone
-      if (roleId === interaction.guildId) {
-        await showRolesList(i);
-        return;
-      }
-
       await showRoleDetail(i, roleId);
     } else if (i.customId.startsWith('perm-role:')) {
       const roleId = i.customId.replace('perm-role:', '');
@@ -280,7 +289,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
 
   collector.on('collect', async (i: any) => {
     if (i.customId === 'perm-back') {
-      await showRolesList(i);
+      await showRolesList(i, { refresh: true });
     } else if (i.customId === `perm-allaccess:${roleId}`) {
       if (isAllAccess) {
         await ServerConfig.findOneAndUpdate(
@@ -301,7 +310,7 @@ async function showRoleDetail(interaction: any, roleId: string) {
         { $pull: { roleIds: roleId } },
       );
       await CommandPermission.deleteMany({ guildId, roleIds: { $size: 0 } });
-      await showRolesList(i);
+      await showRolesList(i, { refresh: true });
     } else if (i.customId === `perm-toggle:${roleId}`) {
       const selectedCommands = new Set<string>(i.values);
       const allCommands = commands.map(c => c.metadata.name);
@@ -327,17 +336,3 @@ async function showRoleDetail(interaction: any, roleId: string) {
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
-async function respondToInteraction(
-  interaction: ChatInputCommandInteraction | ButtonInteraction,
-  components: any[],
-  options?: { fetchReply?: boolean }
-) {
-  return interaction.reply({
-    components,
-    fetchReply: options?.fetchReply,
-    flags: [MessageFlags.IsComponentsV2],
-    ephemeral: true,
-  });
-}

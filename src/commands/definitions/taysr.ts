@@ -14,6 +14,7 @@ export function createTaysrCommand(commandName: string): Command {
       description: 'Show help and available commands',
       implemented: true,
       requiresGuild: false,
+      alwaysPublic: true,
     },
 
     build: () => {

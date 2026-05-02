@@ -21,6 +21,8 @@ export interface CommandMetadata {
   requiresGuild: boolean;
   /** Command category — 'settings' commands are hidden from the main picker */
   category?: 'settings';
+  /** When true, this command is always allowed regardless of lockdown or per-role grants. */
+  alwaysPublic?: boolean;
 }
 
 /**
